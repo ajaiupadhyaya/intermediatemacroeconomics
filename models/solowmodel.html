@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Solow Growth Model Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .tooltip {
+            position: absolute; text-align: center; padding: 8px 12px;
+            font: 12px 'Inter', sans-serif; background: rgba(15, 23, 42, 0.9);
+            color: white; border: 0px; border-radius: 8px; pointer-events: none;
+            opacity: 0; transition: opacity 0.2s; backdrop-filter: blur(4px);
+        }
+        .shock-btn { transition: all 0.2s ease-in-out; }
+        .shock-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .story-highlight {
+            background-color: rgba(240, 253, 244, 1); /* green-50 */
+            border-left: 3px solid rgba(34, 197, 94, 1); /* green-500 */
+            padding: 0.75rem; border-radius: 0.25rem;
+        }
+        .axis-label { font-size: 14px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">The Solow Growth Model</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive dashboard for analyzing capital accumulation, technological progress, and long-run economic growth.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Shocks -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Parameters</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Economic Shocks</h2>
+                    <div id="shocks-container" class="grid grid-cols-2 gap-3 text-sm"></div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualizations -->
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">The Solow Diagram</h3>
+                    <div id="solow-diagram-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Convergence to Steady State</h3>
+                     <div id="path-chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                <div id="equations-container" class="space-y-4 text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const DURATION = 750;
+        const EASE = d3.easeCubicOut;
+        const COLORS = {
+            investment: "#2563eb", depreciation: "#dc2626", output: "#16a34a",
+            capital: "#1e293b", grid: "#e2e8f0", capital_path: "#1e293b", output_path: "#16a34a"
+        };
+
+        let state = {};
+        let initialState = null;
+        let time_series_data = [];
+
+        const params = {
+            s: { min: 0.05, max: 0.6, value: 0.2, step: 0.01, label: "Savings Rate", symbol: "s" },
+            delta: { min: 0.01, max: 0.2, value: 0.05, step: 0.005, label: "Depreciation Rate", symbol: "δ" },
+            g_A: { min: 0.0, max: 0.05, value: 0.02, step: 0.005, label: "Tech. Growth", symbol: "g_A" },
+            g_L: { min: 0.0, max: 0.05, value: 0.01, step: 0.005, label: "Pop. Growth", symbol: "g_L" },
+            alpha: { min: 0.2, max: 0.5, value: 0.33, step: 0.01, label: "Capital Share", symbol: "α" },
+            k0: { min: 0.1, max: 10.0, value: 1.0, step: 0.1, label: "Initial Capital", symbol: "k₀" }
+        };
+
+        const shocks = {
+            's_up': { label: "↑ Savings", param: 's', change: 0.1 },
+            'tech_boom': { label: "↑ Tech Growth", param: 'g_A', change: 0.01 },
+            'disaster': { label: "↑ Depreciation", param: 'delta', change: 0.05 },
+            's_down': { label: "↓ Savings", param: 's', change: -0.1 }
+        };
+
+        // --- D3 SETUP ---
+        const solowMargin = { top: 20, right: 20, bottom: 40, left: 50 };
+        const solowContainer = document.getElementById('solow-diagram-container');
+        let solowWidth = solowContainer.clientWidth - solowMargin.left - solowMargin.right;
+        let solowHeight = solowWidth * 0.6;
+        const solowSvg = d3.select("#solow-diagram-container").append("svg")
+            .attr("viewBox", `0 0 ${solowWidth + solowMargin.left + solowMargin.right} ${solowHeight + solowMargin.top + solowMargin.bottom}`)
+            .append("g").attr("transform", `translate(${solowMargin.left},${solowMargin.top})`);
+
+        const pathMargin = { top: 20, right: 20, bottom: 40, left: 50 };
+        const pathContainer = document.getElementById('path-chart-container');
+        let pathWidth = pathContainer.clientWidth - pathMargin.left - pathMargin.right;
+        let pathHeight = solowHeight;
+        const pathSvg = d3.select("#path-chart-container").append("svg")
+            .attr("viewBox", `0 0 ${pathWidth + pathMargin.left + pathMargin.right} ${pathHeight + pathMargin.top + pathMargin.bottom}`)
+            .append("g").attr("transform", `translate(${pathMargin.left},${pathMargin.top})`);
+        
+        // --- CALCULATIONS ---
+        function calculateState() {
+            const currentState = {};
+            Object.keys(params).forEach(key => currentState[key] = +d3.select(`#${key}`).property("value"));
+            
+            const { s, delta, g_A, g_L, alpha } = currentState;
+            const g = g_A + g_L;
+            
+            currentState.k_star = Math.pow(s / (delta + g), 1 / (1 - alpha));
+            currentState.y_star = Math.pow(currentState.k_star, alpha);
+            currentState.c_star = currentState.y_star * (1 - s);
+            
+            return currentState;
+        }
+
+        function calculateTimeSeries(T = 150) {
+            const { k0, s, delta, g_A, g_L, alpha } = state;
+            const g = g_A + g_L;
+            const data = [];
+            let k = k0;
+            for (let t = 0; t < T; t++) {
+                const y = Math.pow(k, alpha);
+                const investment = s * y;
+                const depreciation = (delta + g) * k;
+                data.push({ t, k, y });
+                k += investment - depreciation;
+            }
+            time_series_data = data;
+        }
+
+        // --- RENDER FUNCTIONS ---
+        function render() {
+            const oldState = state.k_star ? { ...state } : null;
+            state = calculateState();
+            calculateTimeSeries();
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = d3.select(`#${key}`).property("value");
+                d3.select(`#${key}-value`).text(parseFloat(val).toFixed(p.step < 1 ? 2 : 1));
+            });
+            
+            renderSolowDiagram(oldState);
+            renderPathChart(oldState);
+            renderAnalysis(oldState);
+        }
+
+        function renderSolowDiagram(oldState) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const max_k = Math.max(state.k_star, state.k0) * 1.5;
+            
+            const xScale = d3.scaleLinear().domain([0, max_k]).range([0, solowWidth]);
+            const yScale = d3.scaleLinear().domain([0, Math.pow(max_k, state.alpha)]).range([solowHeight, 0]);
+
+            solowSvg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            solowSvg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            const line = (yFunc) => d3.line().x(d => xScale(d)).y(d => yScale(yFunc(d)));
+            const points = d3.range(0, max_k, max_k / 100);
+
+            solowSvg.select(".investment-curve").datum(points).transition(t).attr("d", line(k => state.s * Math.pow(k, state.alpha)));
+            solowSvg.select(".depreciation-line").datum(points).transition(t).attr("d", line(k => (state.delta + state.g_A + state.g_L) * k));
+            
+            // Steady state lines
+            solowSvg.select(".k-star-line-v").transition(t).attr("x1", xScale(state.k_star)).attr("y1", yScale(0)).attr("x2", xScale(state.k_star)).attr("y2", solowHeight);
+            solowSvg.select(".k-star-line-h").transition(t).attr("x1", 0).attr("y1", yScale(state.y_star * state.s)).attr("x2", xScale(state.k_star)).attr("y2", yScale(state.y_star * state.s));
+            
+            // Old steady state for comparison
+            if (oldState) {
+                solowSvg.select(".k-star-line-v-old").transition(t)
+                    .attr("x1", xScale(oldState.k_star)).attr("y1", yScale(0))
+                    .attr("x2", xScale(oldState.k_star)).attr("y2", solowHeight)
+                    .style("opacity", 1).transition().delay(DURATION*2).style("opacity", 0);
+            }
+        }
+
+        function renderPathChart(oldState) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const T = time_series_data.length;
+            const max_y = d3.max(time_series_data, d => d.y) * 1.1;
+
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, pathWidth]);
+            const yScale = d3.scaleLinear().domain([0, max_y]).range([pathHeight, 0]);
+
+            pathSvg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            pathSvg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+            
+            const line = (y_val) => d3.line().x(d => xScale(d.t)).y(d => yScale(d[y_val]));
+
+            pathSvg.select(".k-path").datum(time_series_data).transition(t).attr("d", line('k'));
+            pathSvg.select(".y-path").datum(time_series_data).transition(t).attr("d", line('y'));
+
+            pathSvg.select(".k-star-line").transition(t).attr("y1", yScale(state.k_star)).attr("y2", yScale(state.k_star));
+            pathSvg.select(".y-star-line").transition(t).attr("y1", yScale(state.y_star)).attr("y2", yScale(state.y_star));
+        }
+
+        function renderAnalysis(oldState) {
+            const k_relation = state.k0 > state.k_star ? "above" : "below";
+            const k_dynamic = state.k0 > state.k_star ? "decreasing" : "increasing";
+            
+            let story = `With initial capital of <b>${state.k0.toFixed(2)}</b>, the economy starts <b>${k_relation}</b> its steady state of <b>${state.k_star.toFixed(2)}</b>. `;
+            story += `Because investment is ${k_relation === 'above' ? 'less than' : 'greater than'} break-even investment, capital per worker is <b>${k_dynamic}</b> over time, converging to the long-run equilibrium.`
+            
+            if (oldState) {
+                const k_change = state.k_star > oldState.k_star ? "increased" : "decreased";
+                story = `The shock has <b>${k_change}</b> the steady-state capital from <b>${oldState.k_star.toFixed(2)}</b> to <b>${state.k_star.toFixed(2)}</b>. The economy will now converge to this new, ${k_change === 'increased' ? 'higher' : 'lower'} long-run growth path.`;
+            }
+            d3.select("#story-container").html(`<div class="story-highlight">${story}</div>`);
+
+            const accumulation_latex = `\\dot{k} = s k^\\alpha - (\\delta + g_A + g_L) k`;
+            const k_star_latex = `k^* = \\left(\\frac{s}{\\delta + g_A + g_L}\\right)^{\\frac{1}{1 - \\alpha}} = ${state.k_star.toFixed(2)}`;
+            const y_star_latex = `y^* = (k^*)^\\alpha = ${state.y_star.toFixed(2)}`;
+
+            d3.select("#equations-container").html(`
+                <div class="p-3 bg-slate-50 rounded-md"><div id="accum-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="k-star-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="y-star-eq"></div></div>
+            `);
+            katex.render(accumulation_latex, document.getElementById('accum-eq'), { throwOnError: false });
+            katex.render(k_star_latex, document.getElementById('k-star-eq'), { throwOnError: false });
+            katex.render(y_star_latex, document.getElementById('y-star-eq'), { throwOnError: false });
+        }
+        
+        // --- INITIALIZATION ---
+        function init() {
+            // Controls
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            const shocksContainer = d3.select("#shocks-container");
+            Object.entries(shocks).forEach(([key, s]) => {
+                shocksContainer.html(shocksContainer.html() + `<button id="${key}" class="shock-btn w-full bg-slate-100 text-slate-700 font-semibold py-2 px-2 rounded-lg shadow-sm hover:bg-slate-200">${s.label}</button>`);
+            });
+            
+            // Solow Diagram Elements
+            solowSvg.append("g").attr("class", "x-axis").call(d3.axisBottom(d3.scaleLinear()));
+            solowSvg.append("g").attr("class", "y-axis").call(d3.axisLeft(d3.scaleLinear()));
+            solowSvg.append("path").attr("class", "investment-curve").attr("fill", "none").attr("stroke", COLORS.investment).attr("stroke-width", 3);
+            solowSvg.append("path").attr("class", "depreciation-line").attr("fill", "none").attr("stroke", COLORS.depreciation).attr("stroke-width", 3);
+            solowSvg.append("line").attr("class", "k-star-line-v").attr("stroke", "black").attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            solowSvg.append("line").attr("class", "k-star-line-h").attr("stroke", "black").attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            solowSvg.append("line").attr("class", "k-star-line-v-old").attr("stroke", "black").attr("stroke-width", 1).attr("stroke-dasharray", "2 2").style("opacity", 0);
+            solowSvg.append("text").attr("class", "axis-label").attr("x", solowWidth / 2).attr("y", solowHeight + 35).attr("text-anchor", "middle").text("Capital per Effective Worker (k)");
+            solowSvg.append("text").attr("class", "axis-label").attr("transform", "rotate(-90)").attr("x", -solowHeight / 2).attr("y", -35).attr("text-anchor", "middle").text("Output, Inv., Dep.");
+
+            // Path Chart Elements
+            pathSvg.append("g").attr("class", "x-axis").call(d3.axisBottom(d3.scaleLinear()));
+            pathSvg.append("g").attr("class", "y-axis").call(d3.axisLeft(d3.scaleLinear()));
+            pathSvg.append("line").attr("class", "k-star-line").attr("x1", 0).attr("x2", pathWidth).attr("stroke", COLORS.capital_path).attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            pathSvg.append("line").attr("class", "y-star-line").attr("x1", 0).attr("x2", pathWidth).attr("stroke", COLORS.output_path).attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            pathSvg.append("path").attr("class", "k-path").attr("fill", "none").attr("stroke", COLORS.capital_path).attr("stroke-width", 3).attr("stroke-opacity", 0.5);
+            pathSvg.append("path").attr("class", "y-path").attr("fill", "none").attr("stroke", COLORS.output_path).attr("stroke-width", 3);
+            pathSvg.append("text").attr("class", "axis-label").attr("x", pathWidth / 2).attr("y", pathHeight + 35).attr("text-anchor", "middle").text("Time");
+            pathSvg.append("text").attr("class", "axis-label").attr("transform", "rotate(-90)").attr("x", -pathHeight / 2).attr("y", -35).attr("text-anchor", "middle").text("Level per Eff. Worker");
+
+            // Event Listeners
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            Object.entries(shocks).forEach(([key, s]) => {
+                d3.select(`#${key}`).on("click", () => {
+                    d3.select(`#${s.param}`).property("value", parseFloat(d3.select(`#${s.param}`).property("value")) + s.change);
+                    render();
+                });
+            });
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

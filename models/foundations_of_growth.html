@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Foundations of Growth Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .tooltip {
+            position: absolute; text-align: center; padding: 8px 12px;
+            font: 12px 'Inter', sans-serif; background: rgba(15, 23, 42, 0.9);
+            color: white; border: 0px; border-radius: 8px; pointer-events: none;
+            opacity: 0; transition: opacity 0.2s; backdrop-filter: blur(4px);
+        }
+        .scenario-btn { transition: all 0.2s ease-in-out; }
+        .scenario-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .story-highlight {
+            background-color: rgba(254, 249, 231, 1); /* yellow-50 */
+            border-left: 3px solid rgba(245, 158, 11, 1); /* amber-500 */
+            padding: 0.75rem; border-radius: 0.25rem;
+        }
+        .axis-label { font-size: 14px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">Foundations of Growth: Levels vs. Rates</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive demonstration of how small differences in growth rates lead to large differences in outcomes over time.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Scenarios -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Scenario Parameters</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Preset Scenarios</h2>
+                    <div id="scenarios-container" class="grid grid-cols-1 gap-3 text-sm"></div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualization -->
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200">
+                <div id="growth-chart-container"></div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                <div id="equations-container" class="space-y-4 text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const DURATION = 750;
+        const EASE = d3.easeCubicOut;
+        const COLORS = {
+            A: "#2563eb", B: "#dc2626", grid: "#e2e8f0", crossover: "#16a34a"
+        };
+
+        let state = {};
+
+        const params = {
+            initial_level_A: { min: 1, max: 10, value: 2.0, step: 0.5, label: "Start Level (A)", symbol: "Y_{A,0}" },
+            growth_rate_A: { min: -0.1, max: 0.5, value: 0.2, step: 0.01, label: "Growth Rate (A)", symbol: "g_A" },
+            initial_level_B: { min: 1, max: 10, value: 6.0, step: 0.5, label: "Start Level (B)", symbol: "Y_{B,0}" },
+            growth_rate_B: { min: -0.1, max: 0.5, value: 0.0, step: 0.01, label: "Growth Rate (B)", symbol: "g_B" },
+            T: { min: 5, max: 50, value: 10, step: 1, label: "Time Horizon", symbol: "T" }
+        };
+        
+        const scenarios = {
+            'child_adult': { label: "Child vs. Adult Height", settings: { initial_level_A: 2, growth_rate_A: 0.15, initial_level_B: 6, growth_rate_B: 0, T: 15 } },
+            'convergence': { label: "Economic Convergence", settings: { initial_level_A: 1, growth_rate_A: 0.07, initial_level_B: 5, growth_rate_B: 0.02, T: 40 } },
+            'stagnation': { label: "Innovation vs. Stagnation", settings: { initial_level_A: 4, growth_rate_A: 0.03, initial_level_B: 4.5, growth_rate_B: 0.005, T: 30 } }
+        };
+
+        // --- D3 SETUP ---
+        const margin = { top: 20, right: 50, bottom: 40, left: 50 };
+        const container = document.getElementById('growth-chart-container');
+        let width = container.clientWidth - margin.left - margin.right;
+        let height = width * 0.7;
+        const svg = d3.select("#growth-chart-container").append("svg")
+            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+            .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+        
+        // --- CALCULATIONS ---
+        function calculateState() {
+            const currentState = {};
+            Object.keys(params).forEach(key => currentState[key] = +d3.select(`#${key}`).property("value"));
+            
+            const { initial_level_A, growth_rate_A, initial_level_B, growth_rate_B, T } = currentState;
+            const years = d3.range(T + 1);
+            
+            currentState.path_A = years.map(t => initial_level_A * Math.pow(1 + growth_rate_A, t));
+            currentState.path_B = years.map(t => initial_level_B * Math.pow(1 + growth_rate_B, t));
+            
+            currentState.crossoverYear = -1;
+            if (initial_level_A < initial_level_B && growth_rate_A > growth_rate_B) {
+                for(let t = 1; t <= T; t++) {
+                    if (currentState.path_A[t] > currentState.path_B[t]) {
+                        currentState.crossoverYear = t;
+                        break;
+                    }
+                }
+            } else if (initial_level_B < initial_level_A && growth_rate_B > growth_rate_A) {
+                 for(let t = 1; t <= T; t++) {
+                    if (currentState.path_B[t] > currentState.path_A[t]) {
+                        currentState.crossoverYear = t;
+                        break;
+                    }
+                }
+            }
+            return currentState;
+        }
+
+        // --- RENDER FUNCTIONS ---
+        function render() {
+            state = calculateState();
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = d3.select(`#${key}`).property("value");
+                const format = p.symbol.includes('g') ? `${(parseFloat(val) * 100).toFixed(1)}%` : parseFloat(val).toFixed(p.step < 1 ? 1 : 0);
+                d3.select(`#${key}-value`).text(format);
+            });
+            
+            renderChart();
+            renderAnalysis();
+        }
+
+        function renderChart() {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { path_A, path_B, T } = state;
+            const max_y = d3.max([d3.max(path_A), d3.max(path_B)]) * 1.1;
+
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, width]);
+            const yScale = d3.scaleLinear().domain([0, max_y]).range([height, 0]);
+
+            svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale).ticks(Math.min(10, T)));
+            svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+            
+            const lineGen = (path) => d3.line().x((d, i) => xScale(i)).y(d => yScale(d));
+
+            svg.select(".path-A").datum(path_A).transition(t).attr("d", lineGen(path_A));
+            svg.select(".path-B").datum(path_B).transition(t).attr("d", lineGen(path_B));
+
+            // Final value labels
+            svg.select(".label-A").datum([path_A[T]]).transition(t)
+                .attr("transform", `translate(${xScale(T)}, ${yScale(path_A[T])})`)
+                .select("text").text(d => d.toFixed(1));
+            svg.select(".label-B").datum([path_B[T]]).transition(t)
+                .attr("transform", `translate(${xScale(T)}, ${yScale(path_B[T])})`)
+                .select("text").text(d => d.toFixed(1));
+            
+            // Crossover line
+            svg.select(".crossover-line").transition(t)
+                .attr("x1", xScale(state.crossoverYear))
+                .attr("y1", 0)
+                .attr("x2", xScale(state.crossoverYear))
+                .attr("y2", height)
+                .style("opacity", state.crossoverYear > 0 ? 1 : 0);
+        }
+
+        function renderAnalysis() {
+            const { path_A, path_B, T, crossoverYear } = state;
+            const final_A = path_A[T];
+            const final_B = path_B[T];
+
+            let story = `After <b>${T} years</b>, Series A reaches a level of <b>${final_A.toFixed(2)}</b>, while Series B reaches <b>${final_B.toFixed(2)}</b>. `;
+            if (crossoverYear > 0) {
+                story += `Despite starting lower, Series A's higher growth rate allows it to overtake Series B in <b>Year ${crossoverYear}</b>. This demonstrates the power of compounding over time.`;
+            } else {
+                const winner = final_A > final_B ? "A" : "B";
+                const loser = winner === "A" ? "B" : "A";
+                story += `Series ${winner} starts higher and maintains its lead over Series ${loser} for the entire period.`;
+            }
+            d3.select("#story-container").html(`<div class="story-highlight">${story}</div>`);
+
+            const growth_formula = `Y_t = Y_0 (1+g)^t`;
+            const result_A_latex = `Y_{A,${T}} = ${state.initial_level_A.toFixed(1)} (1+${state.growth_rate_A.toFixed(2)})^{${T}} = ${final_A.toFixed(2)}`;
+            const result_B_latex = `Y_{B,${T}} = ${state.initial_level_B.toFixed(1)} (1+${state.growth_rate_B.toFixed(2)})^{${T}} = ${final_B.toFixed(2)}`;
+
+            d3.select("#equations-container").html(`
+                <div class="p-3 bg-slate-50 rounded-md"><div id="growth-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="result-A-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="result-B-eq"></div></div>
+            `);
+            katex.render(growth_formula, document.getElementById('growth-eq'), { throwOnError: false });
+            katex.render(result_A_latex, document.getElementById('result-A-eq'), { throwOnError: false });
+            katex.render(result_B_latex, document.getElementById('result-B-eq'), { throwOnError: false });
+        }
+        
+        // --- INITIALIZATION ---
+        function init() {
+            // Controls
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            const scenariosContainer = d3.select("#scenarios-container");
+            Object.entries(scenarios).forEach(([key, s]) => {
+                scenariosContainer.html(scenariosContainer.html() + `<button id="${key}" class="scenario-btn w-full bg-slate-100 text-slate-700 font-semibold py-2 px-2 rounded-lg shadow-sm hover:bg-slate-200">${s.label}</button>`);
+            });
+            
+            // Chart Elements
+            svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${height})`);
+            svg.append("g").attr("class", "y-axis");
+            svg.append("line").attr("class", "crossover-line").attr("stroke", COLORS.crossover).attr("stroke-width", 2).attr("stroke-dasharray", "5 5").style("opacity", 0);
+            svg.append("path").attr("class", "path-A").attr("fill", "none").attr("stroke", COLORS.A).attr("stroke-width", 3);
+            svg.append("path").attr("class", "path-B").attr("fill", "none").attr("stroke", COLORS.B).attr("stroke-width", 3);
+            
+            const labelA = svg.append("g").attr("class", "label-A");
+            labelA.append("circle").attr("r", 4).attr("fill", COLORS.A);
+            labelA.append("text").attr("x", 8).attr("dy", "0.35em").attr("fill", COLORS.A).style("font-weight", 600);
+            const labelB = svg.append("g").attr("class", "label-B");
+            labelB.append("circle").attr("r", 4).attr("fill", COLORS.B);
+            labelB.append("text").attr("x", 8).attr("dy", "0.35em").attr("fill", COLORS.B).style("font-weight", 600);
+
+            svg.append("text").attr("class", "axis-label").attr("x", width / 2).attr("y", height + 35).attr("text-anchor", "middle").text("Time (Years)");
+            svg.append("text").attr("class", "axis-label").attr("transform", "rotate(-90)").attr("x", -height / 2).attr("y", -35).attr("text-anchor", "middle").text("Level of Variable");
+
+            // Event Listeners
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            Object.entries(scenarios).forEach(([key, s]) => {
+                d3.select(`#${key}`).on("click", () => {
+                    Object.entries(s.settings).forEach(([paramKey, value]) => {
+                        d3.select(`#${paramKey}`).property("value", value);
+                    });
+                    render();
+                });
+            });
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

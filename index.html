@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Economics: A Visual Approach</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .header-title {
+            font-family: 'Source Serif 4', serif;
+        }
+        .model-card {
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .model-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.07);
+        }
+        .launch-btn {
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+        }
+        .launch-btn:hover {
+            transform: translateY(-2px);
+        }
+        .section-header-icon {
+            width: 32px;
+            height: 32px;
+            stroke-width: 1.5;
+        }
+    </style>
+</head>
+<body class="antialiased text-slate-700">
+
+    <!-- Header Section -->
+    <header class="bg-white">
+        <div class="max-w-7xl mx-auto py-16 px-4 sm:py-24 sm:px-6 lg:px-8 text-center">
+            <h1 class="header-title text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl">
+                Interactive Economics
+            </h1>
+            <p class="mt-6 text-xl text-slate-600 max-w-3xl mx-auto">
+                A collection of dynamic and interactive models designed to provide a deeper, more intuitive understanding of core economic principles.
+            </p>
+        </div>
+    </header>
+
+    <!-- Main Content: Model Grid -->
+    <main class="py-16 sm:py-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            
+            <!-- Section: Macroeconomic Growth -->
+            <div class="mb-16">
+                <div class="flex items-center mb-8">
+                    <svg class="section-header-icon text-emerald-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+                    </svg>
+                    <h2 class="header-title text-3xl font-bold text-slate-800 ml-3">Macroeconomic Growth</h2>
+                </div>
+                <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+                    
+                    <!-- Card: Foundations of Growth -->
+                    <div class="model-card bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                        <div class="p-8 flex-grow">
+                            <h3 class="text-xl font-semibold text-slate-900">Foundations of Growth</h3>
+                            <p class="mt-3 text-slate-600">Illustrates the crucial distinction between the level of an economic variable and its growth rate over time.</p>
+                        </div>
+                        <div class="p-6 bg-slate-50">
+                            <a href="models/foundations-growth-dashboard.html" class="launch-btn block w-full text-center bg-emerald-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-emerald-700">
+                                Launch Model
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Card: Cobb-Douglas Production -->
+                    <div class="model-card bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                        <div class="p-8 flex-grow">
+                            <h3 class="text-xl font-semibold text-slate-900">Cobb-Douglas Production</h3>
+                            <p class="mt-3 text-slate-600">Explore how capital and labor combine to create output, demonstrating diminishing returns and returns to scale.</p>
+                        </div>
+                        <div class="p-6 bg-slate-50">
+                            <a href="models/cobb-douglas-dashboard.html" class="launch-btn block w-full text-center bg-emerald-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-emerald-700">
+                                Launch Model
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Card: Solow Growth Model -->
+                    <div class="model-card bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                        <div class="p-8 flex-grow">
+                            <h3 class="text-xl font-semibold text-slate-900">The Solow Growth Model</h3>
+                            <p class="mt-3 text-slate-600">Analyze capital accumulation, technological progress, and the determinants of long-run economic growth.</p>
+                        </div>
+                        <div class="p-6 bg-slate-50">
+                            <a href="models/solow-growth-dashboard.html" class="launch-btn block w-full text-center bg-emerald-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-emerald-700">
+                                Launch Model
+                            </a>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Section: Core Macro Models -->
+            <div class="mb-16">
+                <div class="flex items-center mb-8">
+                     <svg class="section-header-icon text-sky-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                       <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 7.125C2.25 6.504 2.754 6 3.375 6h6c.621 0 1.125.504 1.125 1.125v3.75c0 .621-.504 1.125-1.125 1.125h-6A1.125 1.125 0 012.25 11.25v-4.125zM14.25 8.625c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v8.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-8.25zM3.75 16.125c0-.621.504-1.125 1.125-1.125h5.25c.621 0 1.125.504 1.125 1.125v2.25c0 .621-.504 1.125-1.125 1.125h-5.25a1.125 1.125 0 01-1.125-1.125v-2.25z" />
+                     </svg>
+                    <h2 class="header-title text-3xl font-bold text-slate-800 ml-3">Core Macro Models</h2>
+                </div>
+                <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+                    
+                    <!-- Card: Intertemporal Choice -->
+                    <div class="model-card bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                        <div class="p-8 flex-grow">
+                            <h3 class="text-xl font-semibold text-slate-900">Intertemporal Choice</h3>
+                            <p class="mt-3 text-slate-600">Visualize how rational individuals make consumption and saving decisions over their lifetime.</p>
+                        </div>
+                        <div class="p-6 bg-slate-50">
+                            <a href="models/intertemporal-choice-dashboard.html" class="launch-btn block w-full text-center bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700">
+                                Launch Model
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Card: AD-AS Model -->
+                    <div class="model-card bg-white rounded-2xl shadow-lg overflow-hidden flex flex-col">
+                        <div class="p-8 flex-grow">
+                            <h3 class="text-xl font-semibold text-slate-900">AD-AS Model</h3>
+                            <p class="mt-3 text-slate-600">Analyze business cycles and the dynamic adjustment of output and prices in response to economic shocks.</p>
+                        </div>
+                        <div class="p-6 bg-slate-50">
+                            <a href="models/adas-dashboard.html" class="launch-btn block w-full text-center bg-sky-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-sky-700">
+                                Launch Model
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Add more cards here as we build more models -->
+
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white">
+        <div class="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8 text-center">
+            <p class="text-slate-500">&copy; 2025 Interactive Economics. All rights reserved.</p>
+        </div>
+    </footer>
+
+</body>
+</html>

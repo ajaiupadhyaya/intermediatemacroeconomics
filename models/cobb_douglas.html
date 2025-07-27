@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Cobb-Douglas Production Function Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .tooltip {
+            position: absolute; text-align: center; padding: 8px 12px;
+            font: 12px 'Inter', sans-serif; background: rgba(15, 23, 42, 0.9);
+            color: white; border: 0px; border-radius: 8px; pointer-events: none;
+            opacity: 0; transition: opacity 0.2s; backdrop-filter: blur(4px);
+        }
+        .story-highlight {
+            background-color: rgba(239, 246, 255, 1); /* blue-50 */
+            border-left: 3px solid rgba(59, 130, 246, 1); /* blue-500 */
+            padding: 0.75rem; border-radius: 0.25rem;
+        }
+        .axis-label { font-size: 14px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">The Cobb-Douglas Production Function</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive exploration of how capital and labor combine to create output, featuring diminishing returns and returns to scale.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Production Parameters</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualizations -->
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Production and Marginal Products</h3>
+                    <div id="production-chart-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Constant Returns to Scale (CRS)</h3>
+                     <div id="crs-chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                <div id="equations-container" class="space-y-4 text-sm"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        const DURATION = 600;
+        const EASE = d3.easeCubicOut;
+        const COLORS = {
+            output: "#16a34a", mpk: "#2563eb", apk: "#c2410c",
+            crs_original: "#1f77b4", crs_scaled_inputs: "#ff7f0e", crs_scaled_output: "#d62728"
+        };
+
+        let state = {};
+
+        const params = {
+            A: { min: 0.5, max: 3.0, value: 1.0, step: 0.1, label: "TFP", symbol: "A" },
+            alpha: { min: 0.1, max: 0.9, value: 0.33, step: 0.01, label: "Capital Share", symbol: "α" },
+            L: { min: 10, max: 500, value: 100, step: 10, label: "Labor", symbol: "L" },
+            K_max: { min: 50, max: 1000, value: 200, step: 10, label: "Capital Range", symbol: "K_{max}" },
+            lambda: { min: 0.5, max: 3.0, value: 2.0, step: 0.1, label: "Scale Factor", symbol: "λ" }
+        };
+
+        // --- D3 SETUP ---
+        const prodMargin = { top: 20, right: 50, bottom: 40, left: 50 };
+        const prodContainer = document.getElementById('production-chart-container');
+        let prodWidth = prodContainer.clientWidth - prodMargin.left - prodMargin.right;
+        let prodHeight = prodWidth * 0.6;
+        const prodSvg = d3.select("#production-chart-container").append("svg")
+            .attr("viewBox", `0 0 ${prodWidth + prodMargin.left + prodMargin.right} ${prodHeight + prodMargin.top + prodMargin.bottom}`)
+            .append("g").attr("transform", `translate(${prodMargin.left},${prodMargin.top})`);
+
+        const crsMargin = { top: 10, right: 20, bottom: 30, left: 50 };
+        const crsContainer = document.getElementById('crs-chart-container');
+        let crsWidth = crsContainer.clientWidth - crsMargin.left - crsMargin.right;
+        let crsHeight = prodHeight * 0.5;
+        const crsSvg = d3.select("#crs-chart-container").append("svg")
+             .attr("viewBox", `0 0 ${crsWidth + crsMargin.left + crsMargin.right} ${crsHeight + crsMargin.top + crsMargin.bottom}`)
+             .append("g").attr("transform", `translate(${crsMargin.left},${crsMargin.top})`);
+        
+        // --- CALCULATIONS ---
+        function calculateState() {
+            const currentState = {};
+            Object.keys(params).forEach(key => currentState[key] = +d3.select(`#${key}`).property("value"));
+            
+            const { A, alpha, L, K_max, lambda } = currentState;
+            
+            // For plot
+            const K_plot = d3.range(1, K_max + 1, K_max / 200);
+            currentState.plotData = K_plot.map(k => {
+                const y = A * Math.pow(k, alpha) * Math.pow(L, 1 - alpha);
+                return {
+                    k: k,
+                    y: y,
+                    mpk: alpha * y / k,
+                    apk: y / k
+                };
+            });
+
+            // For CRS check (using L as the reference K)
+            const K_ref = L;
+            currentState.Y_original = A * Math.pow(K_ref, alpha) * Math.pow(L, 1 - alpha);
+            currentState.Y_scaled_inputs = A * Math.pow(K_ref * lambda, alpha) * Math.pow(L * lambda, 1 - alpha);
+            currentState.Y_scaled_output = currentState.Y_original * lambda;
+            
+            return currentState;
+        }
+
+        // --- RENDER FUNCTIONS ---
+        function render() {
+            state = calculateState();
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = d3.select(`#${key}`).property("value");
+                d3.select(`#${key}-value`).text(parseFloat(val).toFixed(p.step < 1 ? 2 : 0));
+            });
+            
+            renderProductionChart();
+            renderCrsChart();
+            renderAnalysis();
+        }
+
+        function renderProductionChart() {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { plotData, K_max } = state;
+            
+            const xScale = d3.scaleLinear().domain([0, K_max]).range([0, prodWidth]);
+            const y1Scale = d3.scaleLinear().domain([0, d3.max(plotData, d => d.y)]).range([prodHeight, 0]);
+            const y2Scale = d3.scaleLinear().domain([0, d3.max(plotData, d => d.apk)]).range([prodHeight, 0]);
+
+            prodSvg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            prodSvg.select(".y1-axis").transition(t).call(d3.axisLeft(y1Scale));
+            prodSvg.select(".y2-axis").transition(t).call(d3.axisRight(y2Scale));
+
+            const line = (y_val) => d3.line().x(d => xScale(d.k)).y(d => y1Scale(d[y_val]));
+            const line2 = (y_val) => d3.line().x(d => xScale(d.k)).y(d => y2Scale(d[y_val]));
+
+            prodSvg.select(".output-curve").datum(plotData).transition(t).attr("d", line('y'));
+            prodSvg.select(".mpk-curve").datum(plotData).transition(t).attr("d", line2('mpk'));
+            prodSvg.select(".apk-curve").datum(plotData).transition(t).attr("d", line2('apk'));
+        }
+
+        function renderCrsChart() {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { Y_original, Y_scaled_inputs, Y_scaled_output } = state;
+            const data = [
+                { label: "Original Y", value: Y_original, color: COLORS.crs_original },
+                { label: "Y from Scaled Inputs", value: Y_scaled_inputs, color: COLORS.crs_scaled_inputs },
+                { label: "Scaled Original Y", value: Y_scaled_output, color: COLORS.crs_scaled_output }
+            ];
+            
+            const xScale = d3.scaleBand().domain(data.map(d => d.label)).range([0, crsWidth]).padding(0.2);
+            const yScale = d3.scaleLinear().domain([0, d3.max(data, d => d.value) * 1.2]).range([crsHeight, 0]);
+
+            crsSvg.select(".y-axis").transition(t).call(d3.axisLeft(yScale).ticks(5));
+            crsSvg.select(".x-axis").call(d3.axisBottom(xScale));
+            
+            crsSvg.selectAll(".bar").data(data, d => d.label)
+                .join(
+                    enter => enter.append("rect").attr("class", "bar")
+                        .attr("x", d => xScale(d.label))
+                        .attr("y", d => yScale(0))
+                        .attr("height", 0)
+                        .attr("fill", d => d.color),
+                    update => update,
+                    exit => exit.transition(t).attr("y", yScale(0)).attr("height", 0).remove()
+                )
+                .transition(t)
+                .attr("x", d => xScale(d.label))
+                .attr("width", xScale.bandwidth())
+                .attr("y", d => yScale(d.value))
+                .attr("height", d => crsHeight - yScale(d.value));
+        }
+
+        function renderAnalysis() {
+            const { alpha, Y_original, Y_scaled_inputs } = state;
+
+            let story = `The capital share (α) of <b>${alpha.toFixed(2)}</b> determines the curvature of the production function. A higher α means capital is more important, and diminishing returns set in more slowly.<br><br>`;
+            const crs_holds = Math.abs(Y_original - Y_scaled_inputs / state.lambda) < 1e-6;
+            story += `<div class="story-highlight">The bar chart confirms <b>Constant Returns to Scale</b>. When all inputs are scaled by a factor of <b>${state.lambda.toFixed(1)}</b>, output also scales by the same factor.</div>`;
+            
+            d3.select("#story-container").html(story);
+
+            const prod_func_latex = `Y = A K^\\alpha L^{1-\\alpha}`;
+            const mpk_latex = `MPK = \\frac{\\partial Y}{\\partial K} = \\alpha \\frac{Y}{K}`;
+            const crs_latex = `A (\\lambda K)^\\alpha (\\lambda L)^{1-\\alpha} = \\lambda (A K^\\alpha L^{1-\\alpha}) = \\lambda Y`;
+
+            d3.select("#equations-container").html(`
+                <div class="p-3 bg-slate-50 rounded-md"><div id="prod-func-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="mpk-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="crs-eq"></div></div>
+            `);
+            katex.render(prod_func_latex, document.getElementById('prod-func-eq'), { throwOnError: false });
+            katex.render(mpk_latex, document.getElementById('mpk-eq'), { throwOnError: false });
+            katex.render(crs_latex, document.getElementById('crs-eq'), { throwOnError: false });
+        }
+        
+        // --- INITIALIZATION ---
+        function init() {
+            // Controls
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            
+            // Production Chart Elements
+            prodSvg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${prodHeight})`);
+            prodSvg.append("g").attr("class", "y1-axis").style("color", COLORS.output);
+            prodSvg.append("g").attr("class", "y2-axis").attr("transform", `translate(${prodWidth},0)`).style("color", COLORS.mpk);
+            prodSvg.append("path").attr("class", "output-curve").attr("fill", "none").attr("stroke", COLORS.output).attr("stroke-width", 3);
+            prodSvg.append("path").attr("class", "mpk-curve").attr("fill", "none").attr("stroke", COLORS.mpk).attr("stroke-width", 2).attr("stroke-dasharray", "5 5");
+            prodSvg.append("path").attr("class", "apk-curve").attr("fill", "none").attr("stroke", COLORS.apk).attr("stroke-width", 2).attr("stroke-dasharray", "2 2");
+            prodSvg.append("text").attr("class", "axis-label").attr("x", prodWidth / 2).attr("y", prodHeight + 35).attr("text-anchor", "middle").text("Capital (K)");
+            prodSvg.append("text").attr("class", "axis-label").attr("transform", "rotate(-90)").attr("x", -prodHeight / 2).attr("y", -40).attr("text-anchor", "middle").attr("fill", COLORS.output).text("Output (Y)");
+            prodSvg.append("text").attr("class", "axis-label").attr("transform", "rotate(90)").attr("x", prodHeight / 2).attr("y", -prodWidth - 40).attr("text-anchor", "middle").attr("fill", COLORS.mpk).text("Marginal/Average Product");
+
+            // CRS Chart Elements
+            crsSvg.append("g").attr("class", "y-axis");
+            crsSvg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${crsHeight})`).style("font-size", "10px");
+
+            // Event Listeners
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

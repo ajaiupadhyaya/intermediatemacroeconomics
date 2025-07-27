@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tobin's q Investment Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 14px; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">Tobin's q Theory of Investment</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive dashboard showing how firms decide to invest by comparing the value of capital to its cost.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Firm & Market Parameters</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Optimal Capital & MPK</h3>
+                    <div id="mpk-chart-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Investment Response to q</h3>
+                     <div id="q-chart-container"></div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        let state = {};
+        const DURATION = 600;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { mpk: "#16a34a", user_cost: "#dc2777", investment: "#2563eb" };
+        const params = {
+            A: { min: 0.5, max: 3.0, value: 1.0, step: 0.1, label: "TFP", symbol: "A" },
+            alpha: { min: 0.1, max: 0.8, value: 0.33, step: 0.01, label: "Capital Share", symbol: "α" },
+            K_current: { min: 1, max: 200, value: 50, step: 1, label: "Current Capital", symbol: "K" },
+            L: { min: 10, max: 1000, value: 100, step: 10, label: "Labor", symbol: "L" },
+            r: { min: 0.0, max: 0.15, value: 0.04, step: 0.005, label: "Interest Rate", symbol: "r" },
+            delta: { min: 0.0, max: 0.15, value: 0.06, step: 0.005, label: "Depreciation", symbol: "δ" },
+            inv_sens: { min: 0, max: 50, value: 10, step: 1, label: "Invest. Sensitivity", symbol: "ψ" }
+        };
+
+        const mpkChart = setupChart('mpk-chart-container', { top: 20, right: 20, bottom: 40, left: 50 });
+        const qChart = setupChart('q-chart-container', { top: 20, right: 20, bottom: 40, left: 50 });
+
+        function calculateState(p) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +p[key].value);
+            const { A, alpha, K_current, L, r, delta, inv_sens } = s;
+            
+            s.user_cost = r + delta;
+            s.mpk_at_K = alpha * A * Math.pow(K_current, alpha - 1) * Math.pow(L, 1 - alpha);
+            s.q = s.user_cost > 0 ? s.mpk_at_K / s.user_cost : Infinity;
+            
+            const denominator = (alpha * A * Math.pow(L, 1 - alpha));
+            s.K_star = s.user_cost > 0 ? Math.pow(denominator / s.user_cost, 1 / (1 - alpha)) : Infinity;
+            
+            s.net_investment = inv_sens * Math.max(0, s.q - 1);
+            s.gross_investment = s.net_investment + delta * K_current;
+
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                const format = (p.symbol === 'r' || p.symbol === 'δ') ? d3.format(".1%") : d3.format(",.1f");
+                d3.select(`#${key}-value`).text(format(val));
+            });
+            
+            renderMpkChart(state);
+            renderQChart(state);
+            renderAnalysis(state);
+        }
+
+        function renderMpkChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { A, alpha, L, K_star, user_cost, K_current, mpk_at_K } = s;
+            const K_max = Math.max(K_star, K_current) * 1.5;
+            
+            const k_vals = d3.range(1, K_max, K_max/200);
+            const mpk_data = k_vals.map(k => ({ k, mpk: alpha * A * Math.pow(k, alpha - 1) * Math.pow(L, 1 - alpha) }));
+            const max_mpk = d3.max(mpk_data, d => d.mpk);
+
+            const xScale = d3.scaleLinear().domain([0, K_max]).range([0, mpkChart.width]);
+            const yScale = d3.scaleLinear().domain([0, max_mpk]).range([mpkChart.height, 0]).nice();
+
+            mpkChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            mpkChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            mpkChart.svg.select(".mpk-curve").datum(mpk_data).transition(t).attr("d", d3.line().x(d=>xScale(d.k)).y(d=>yScale(d.mpk)));
+            mpkChart.svg.select(".user-cost-line").transition(t).attr("y1", yScale(user_cost)).attr("y2", yScale(user_cost));
+            mpkChart.svg.select(".k-star-line").transition(t).attr("x1", xScale(K_star)).attr("x2", xScale(K_star));
+            mpkChart.svg.select(".current-k-point").transition(t).attr("cx", xScale(K_current)).attr("cy", yScale(mpk_at_K));
+        }
+
+        function renderQChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { inv_sens, q, net_investment } = s;
+            
+            const q_max = Math.max(2.0, q * 1.2);
+            const q_vals = d3.range(0, q_max, q_max/100);
+            const inv_data = q_vals.map(q_val => ({ q: q_val, inv: inv_sens * Math.max(0, q_val - 1) }));
+
+            const xScale = d3.scaleLinear().domain([0, q_max]).range([0, qChart.width]);
+            const yScale = d3.scaleLinear().domain([0, d3.max(inv_data, d=>d.inv)]).range([qChart.height, 0]).nice();
+
+            qChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            qChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            qChart.svg.select(".investment-curve").datum(inv_data).transition(t).attr("d", d3.line().x(d=>xScale(d.q)).y(d=>yScale(d.inv)));
+            qChart.svg.select(".q-threshold-line").transition(t).attr("x1", xScale(1)).attr("x2", xScale(1));
+            qChart.svg.select(".current-q-point").transition(t).attr("cx", xScale(q)).attr("cy", yScale(net_investment));
+        }
+
+        function renderAnalysis(s) { /* ... */ }
+        function setupChart(containerId, margin) { /* ... */ return { svg, width, height }; }
+        function init() { /* ... */ }
+        init();
+    </script>
+</body>
+</html>

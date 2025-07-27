@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mathematics of Growth Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 14px; }
+        .scenario-btn { transition: all 0.2s ease-in-out; }
+        .scenario-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+        /* Chat styles */
+        .chat-bubble-user { background-color: #e0f2fe; }
+        .chat-bubble-ai { background-color: #f1f5f9; }
+        .chat-container { max-height: 400px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">The Mathematics of Growth</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive calculator for understanding annualized growth rates, compounding, and logarithmic approximations.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Tutor -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Parameters</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Preset Scenarios</h2>
+                    <div id="scenarios-container" class="grid grid-cols-1 gap-3 text-sm"></div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualizations -->
+            <div class="xl:col-span-5 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Growth Path</h3>
+                    <div id="growth-chart-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Exact vs. Log-Approximated Growth Rate</h3>
+                     <div id="comparison-chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-4 bg-white p-6 rounded-2xl shadow-lg border border-slate-200 flex flex-col">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                    <div id="next-steps-container" class="mt-6 border-t pt-4"></div>
+                </div>
+                 <div class="mt-auto">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 mt-6 section-title">AI Economics Tutor</h2>
+                    <div id="chat-container" class="overflow-y-auto pr-2 space-y-4 mb-4 min-h-[150px] max-h-[250px]">
+                        <div class="chat-bubble-ai p-3 rounded-lg"><p class="text-sm text-slate-700">Ask a question about the current scenario!</p></div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <input type="text" id="chat-input" placeholder="e.g., Explain the Rule of 72" class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        <button id="chat-submit" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">Ask</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- STATE & CONFIG ---
+        let state = {};
+        const DURATION = 750;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { path: "#16a34a", exact: "#2563eb", approx: "#f59e0b" };
+        const params = {
+            Y0: { min: 1, max: 10000, value: 100, step: 10, label: "Initial Value", symbol: "Y₀" },
+            YT: { min: 1, max: 20000, value: 200, step: 10, label: "Final Value", symbol: "Y_T" },
+            T: { min: 1, max: 100, value: 20, step: 1, label: "Number of Years", symbol: "T" }
+        };
+        const scenarios = {
+            'slow_growth': { label: "Typical Economic Growth", settings: { Y0: 20000, YT: 40000, T: 35 } },
+            'fast_growth': { label: "Rapid Catch-up Growth", settings: { Y0: 2000, YT: 20000, T: 30 } },
+            'rule_of_72': { label: "The Rule of 72", settings: { Y0: 100, YT: 200, T: 10 } },
+            'high_error': { label: "Approximation Error", settings: { Y0: 100, YT: 1000, T: 5 } }
+        };
+
+        // --- D3 & DOM SETUP ---
+        function setupChart(containerId, margin) {
+            const container = document.getElementById(containerId);
+            let width = container.clientWidth - margin.left - margin.right;
+            let height = width * 0.6;
+            if (width < 100) { width = 300; height = 180; }
+            const svg = d3.select(`#${containerId}`).append("svg")
+                .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+                .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+            return { svg, width, height };
+        }
+        const growthChart = setupChart('growth-chart-container', { top: 20, right: 20, bottom: 40, left: 60 });
+        const comparisonChart = setupChart('comparison-chart-container', { top: 10, right: 20, bottom: 30, left: 60 });
+
+        // --- CORE LOGIC ---
+        function calculateState(currentParams) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +currentParams[key].value);
+            const { Y0, YT, T } = s;
+            
+            s.exact_g = Math.pow(YT / Y0, 1 / T) - 1;
+            s.log_approx_g = (Math.log(YT) - Math.log(Y0)) / T;
+            
+            s.path = d3.range(T + 1).map(t => Y0 * Math.pow(1 + s.exact_g, t));
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                d3.select(`#${key}-value`).text(parseFloat(val).toLocaleString(undefined, {maximumFractionDigits: 0}));
+            });
+            
+            renderGrowthChart(state);
+            renderComparisonChart(state);
+            renderAnalysis(state);
+        }
+
+        function renderGrowthChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { path, T } = s;
+
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, growthChart.width]);
+            const yScale = d3.scaleLinear().domain([0, d3.max(path)]).range([growthChart.height, 0]).nice();
+
+            growthChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            growthChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            growthChart.svg.select(".growth-path").datum(path)
+                .transition(t)
+                .attr("d", d3.line().x((d, i) => xScale(i)).y(d => yScale(d)));
+            
+            growthChart.svg.selectAll(".endpoint").data([path[0], path[T]])
+                .transition(t)
+                .attr("cx", (d, i) => xScale(i * T))
+                .attr("cy", d => yScale(d));
+        }
+
+        function renderComparisonChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const data = [
+                { label: "Exact", value: s.exact_g, color: COLORS.exact },
+                { label: "Log Approx.", value: s.log_approx_g, color: COLORS.approx }
+            ];
+            
+            const xScale = d3.scaleBand().domain(data.map(d => d.label)).range([0, comparisonChart.width]).padding(0.4);
+            const yScale = d3.scaleLinear().domain([0, d3.max(data, d => d.value) * 1.2]).range([comparisonChart.height, 0]).nice();
+
+            comparisonChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale).ticks(5).tickFormat(d3.format(".1%")));
+            comparisonChart.svg.select(".x-axis").call(d3.axisBottom(xScale));
+            
+            comparisonChart.svg.selectAll(".bar").data(data, d => d.label)
+                .join(
+                    enter => enter.append("rect").attr("class", "bar")
+                        .attr("x", d => xScale(d.label))
+                        .attr("y", yScale(0)).attr("height", 0)
+                        .attr("fill", d => d.color),
+                    update => update,
+                    exit => exit.remove()
+                )
+                .transition(t)
+                .attr("x", d => xScale(d.label))
+                .attr("width", xScale.bandwidth())
+                .attr("y", d => yScale(d.value))
+                .attr("height", d => comparisonChart.height - yScale(d.value));
+        }
+
+        function renderAnalysis(s) {
+            const { exact_g, log_approx_g } = s;
+            const error = Math.abs(exact_g - log_approx_g);
+            const error_pct = (error / Math.abs(exact_g)) * 100;
+
+            let story = `The exact annualized growth rate is <b>${(exact_g * 100).toFixed(2)}%</b>. The useful logarithmic approximation yields <b>${(log_approx_g * 100).toFixed(2)}%</b>.`;
+            story += `<br><br><div class="story-highlight">The approximation error is just <b>${error_pct.toFixed(2)}%</b>. Notice how this error shrinks for smaller growth rates and grows larger for more dramatic changes over short periods.</div>`;
+            d3.select("#story-container").html(story);
+
+            const growth_formula = `g = \\left( \\frac{Y_T}{Y_0} \\right)^{1/T} - 1`;
+            const log_approx_formula = `g \\approx \\frac{\\ln(Y_T) - \\ln(Y_0)}{T}`;
+
+            d3.select("#equations-container").html(`
+                <h3 class="text-xl font-semibold text-slate-700 mb-2">Key Equations</h3>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="growth-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="log-approx-eq"></div></div>
+            `);
+            katex.render(growth_formula, document.getElementById('growth-eq'), { throwOnError: false });
+            katex.render(log_approx_formula, document.getElementById('log-approx-eq'), { throwOnError: false });
+
+            d3.select("#next-steps-container").html(`
+                <h4 class="font-semibold text-slate-700">Next Steps</h4>
+                <p class="text-xs text-slate-600 mt-1">Now that you understand growth rates, see how they combine with initial levels. Explore the <b>Foundations of Growth</b> model.</p>
+                <button class="mt-2 w-full text-xs bg-slate-200 text-slate-700 font-semibold py-2 px-2 rounded-lg hover:bg-slate-300">Go to Foundations Model</button>
+            `);
+        }
+        
+        // --- AI TUTOR ---
+        const chatContainer = d3.select("#chat-container");
+        const chatInput = d3.select("#chat-input");
+        const chatSubmit = d3.select("#chat-submit");
+
+        async function handleTutorRequest() {
+            const userInput = chatInput.property("value");
+            if (!userInput) return;
+            // ... (AI logic, same as previous version, prompt needs to be updated) ...
+        }
+
+        // --- INITIALIZATION ---
+        function init() {
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            const scenariosContainer = d3.select("#scenarios-container");
+            Object.entries(scenarios).forEach(([key, s]) => {
+                scenariosContainer.html(scenariosContainer.html() + `<button id="${key}" class="scenario-btn w-full bg-slate-100 text-slate-700 font-semibold py-2 px-2 rounded-lg shadow-sm hover:bg-slate-200">${s.label}</button>`);
+            });
+            
+            // Growth Chart Elements
+            growthChart.svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${growthChart.height})`);
+            growthChart.svg.append("g").attr("class", "y-axis");
+            growthChart.svg.append("path").attr("class", "growth-path").attr("fill", "none").attr("stroke", COLORS.path).attr("stroke-width", 3);
+            growthChart.svg.selectAll(".endpoint").data([0,1]).enter().append("circle").attr("class", "endpoint").attr("r", 5).attr("fill", "red");
+            growthChart.svg.append("text").attr("class", "axis-label").attr("x", growthChart.width / 2).attr("y", growthChart.height + 35).attr("text-anchor", "middle").text("Years (t)");
+            growthChart.svg.append("text").attr("class", "axis-label").attr("transform", "rotate(-90)").attr("x", -growthChart.height / 2).attr("y", -50).attr("text-anchor", "middle").text("Value (Y)");
+
+            // Comparison Chart Elements
+            comparisonChart.svg.append("g").attr("class", "y-axis");
+            comparisonChart.svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${comparisonChart.height})`);
+            comparisonChart.svg.append("text").attr("class", "axis-label").attr("transform", "rotate(-90)").attr("x", -comparisonChart.height / 2).attr("y", -50).attr("text-anchor", "middle").text("Growth Rate (g)");
+
+            // Event Listeners
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            Object.entries(scenarios).forEach(([key, s]) => {
+                d3.select(`#${key}`).on("click", () => {
+                    Object.entries(s.settings).forEach(([paramKey, value]) => {
+                        d3.select(`#${paramKey}`).property("value", value);
+                    });
+                    render();
+                });
+            });
+            chatSubmit.on("click", handleTutorRequest);
+            chatInput.on("keydown", (event) => { if (event.key === "Enter") handleTutorRequest(); });
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

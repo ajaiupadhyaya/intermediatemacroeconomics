@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solow Transition Model Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 14px; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+        .chat-bubble-user { background-color: #e0f2fe; }
+        .chat-bubble-ai { background-color: #f1f5f9; }
+        .chat-container { max-height: 400px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">The Solow Transition Model</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive dashboard for analyzing how capital accumulation drives an economy towards its long-run steady state.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Tutor -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Parameters</h2>
+                    <div class="flex justify-center mb-4">
+                        <button id="guided-tour-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors text-sm">Start Guided Tour</button>
+                    </div>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 flex flex-col">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">AI Economics Tutor</h2>
+                    <div id="chat-container" class="flex-grow overflow-y-auto pr-2 space-y-4 mb-4 min-h-[200px]">
+                        <div class="chat-bubble-ai p-3 rounded-lg"><p class="text-sm text-slate-700">Set the parameters and ask a question!</p></div>
+                    </div>
+                    <div class="mt-auto">
+                        <div class="flex space-x-2">
+                            <input type="text" id="chat-input" placeholder="Why does capital stop growing?" class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <button id="chat-submit" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">Ask</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualizations -->
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">The Solow Diagram</h3>
+                    <div id="solow-diagram-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Convergence to Steady State</h3>
+                     <div id="path-chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                    <div id="next-steps-container" class="mt-6 border-t pt-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- STATE & CONFIG ---
+        let state = {};
+        const DURATION = 750;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { investment: "#2563eb", depreciation: "#dc2626", capital_path: "#1e293b", output_path: "#16a34a" };
+        const params = {
+            A_bar: { min: 0.5, max: 2.0, value: 1.0, step: 0.1, label: "TFP", symbol: "\\bar{A}" },
+            s: { min: 0.05, max: 0.5, value: 0.2, step: 0.01, label: "Savings Rate", symbol: "s" },
+            delta: { min: 0.01, max: 0.2, value: 0.05, step: 0.01, label: "Depreciation", symbol: "δ" },
+            alpha: { min: 0.2, max: 0.5, value: 0.33, step: 0.01, label: "Capital Share", symbol: "α" },
+            k0: { min: 0.1, max: 15.0, value: 1.0, step: 0.1, label: "Initial Capital", symbol: "k₀" },
+            T: { min: 20, max: 100, value: 60, step: 5, label: "Time Horizon", symbol: "T" }
+        };
+        const guidedTour = [
+            { params: { s: 0.2, k0: 1.0 }, text: "Here is an economy with a savings rate of 20%. Since initial capital (k₀) is below the steady state (k*), investment exceeds depreciation, and the capital stock grows." },
+            { params: { s: 0.4 }, text: "Now, imagine the country implements policies that double the savings rate to 40%. The investment curve shifts up. The old steady state is no longer an equilibrium." },
+            { params: {}, text: "At the old level of capital, investment is now much higher than depreciation. This creates rapid capital accumulation and economic growth." },
+            { params: {}, text: "As capital accumulates, the economy moves along the new investment curve. Due to diminishing returns, growth slows down as it approaches the new, higher steady state." },
+            { params: {}, text: "The economy eventually settles at a new long-run equilibrium with permanently higher capital and output per worker. The transition is complete." }
+        ];
+
+        // --- D3 & DOM SETUP ---
+        function setupChart(containerId, margin) {
+            const container = document.getElementById(containerId);
+            let width = container.clientWidth - margin.left - margin.right;
+            let height = width * 0.6;
+            if (width < 100) { width = 300; height = 180; }
+            const svg = d3.select(`#${containerId}`).append("svg")
+                .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+                .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+            return { svg, width, height };
+        }
+        const solowChart = setupChart('solow-diagram-container', { top: 20, right: 20, bottom: 40, left: 50 });
+        const pathChart = setupChart('path-chart-container', { top: 20, right: 20, bottom: 40, left: 50 });
+
+        // --- CORE LOGIC ---
+        function calculateState(currentParams) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +currentParams[key].value);
+            const { A_bar, s: savings, delta, alpha, k0, T } = s;
+            
+            s.k_star = Math.pow((savings * A_bar) / delta, 1 / (1 - alpha));
+            s.y_star = A_bar * Math.pow(s.k_star, alpha);
+            
+            const time_series = [];
+            let k = k0;
+            for (let t = 0; t < T; t++) {
+                const y = A_bar * Math.pow(k, alpha);
+                time_series.push({ t, k, y });
+                const investment = savings * y;
+                const depreciation = delta * k;
+                k += investment - depreciation;
+            }
+            s.time_series = time_series;
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                d3.select(`#${key}-value`).text(parseFloat(val).toFixed(p.step < 1 ? 2 : 1));
+            });
+            
+            renderSolowDiagram(state);
+            renderPathChart(state);
+            renderAnalysis(state);
+        }
+
+        function renderSolowDiagram(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const max_k = Math.max(s.k_star, s.k0) * 1.5;
+            
+            const xScale = d3.scaleLinear().domain([0, max_k]).range([0, solowChart.width]);
+            const yScale = d3.scaleLinear().domain([0, s.A_bar * Math.pow(max_k, s.alpha)]).range([solowChart.height, 0]);
+
+            solowChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            solowChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            const line = (yFunc) => d3.line().x(d => xScale(d)).y(d => yScale(yFunc(d)));
+            const points = d3.range(0, max_k, max_k / 100);
+
+            solowChart.svg.select(".investment-curve").datum(points).transition(t).attr("d", line(k => s.s * s.A_bar * Math.pow(k, s.alpha)));
+            solowChart.svg.select(".depreciation-line").datum(points).transition(t).attr("d", line(k => s.delta * k));
+            
+            solowChart.svg.select(".k-star-line").transition(t)
+                .attr("x1", xScale(s.k_star)).attr("y1", yScale(0))
+                .attr("x2", xScale(s.k_star)).attr("y2", solowChart.height);
+        }
+
+        function renderPathChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { time_series, k_star, y_star, T } = s;
+            const max_val = Math.max(d3.max(time_series, d => d.y), d3.max(time_series, d => d.k)) * 1.1;
+
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, pathChart.width]);
+            const yScale = d3.scaleLinear().domain([0, max_val]).range([pathChart.height, 0]).nice();
+
+            pathChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            pathChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+            
+            const line = (y_val) => d3.line().x(d => xScale(d.t)).y(d => yScale(d[y_val]));
+
+            pathChart.svg.select(".k-path").datum(time_series).transition(t).attr("d", line('k'));
+            pathChart.svg.select(".y-path").datum(time_series).transition(t).attr("d", line('y'));
+
+            pathChart.svg.select(".k-star-line").transition(t).attr("y1", yScale(k_star)).attr("y2", yScale(k_star));
+            pathChart.svg.select(".y-star-line").transition(t).attr("y1", yScale(y_star)).attr("y2", yScale(y_star));
+        }
+
+        function renderAnalysis(s) {
+            const { k0, k_star } = s;
+            const k_relation = k0 > k_star ? "above" : "below";
+            
+            let story = `With initial capital per worker of <b>${k0.toFixed(2)}</b>, the economy starts <b>${k_relation}</b> its steady state of <b>${k_star.toFixed(2)}</b>. `;
+            story += `Because investment is ${k_relation === 'above' ? 'less than' : 'greater than'} depreciation, capital per worker will ${k_relation === 'above' ? 'decrease' : 'increase'} over time, converging to the long-run equilibrium.`
+            
+            d3.select("#story-container").html(`<div class="story-highlight">${story}</div>`);
+
+            const accumulation_latex = `\\dot{k} = s \\bar{A} k^\\alpha - \\delta k`;
+            const k_star_latex = `k^* = \\left(\\frac{s \\bar{A}}{\\delta}\\right)^{\\frac{1}{1 - \\alpha}} = ${s.k_star.toFixed(2)}`;
+
+            d3.select("#equations-container").html(`
+                <h3 class="text-xl font-semibold text-slate-700 mb-2">Key Equations</h3>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="accum-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="k-star-eq"></div></div>
+            `);
+            katex.render(accumulation_latex, document.getElementById('accum-eq'), { throwOnError: false });
+            katex.render(k_star_latex, document.getElementById('k-star-eq'), { throwOnError: false });
+
+            d3.select("#next-steps-container").html(`
+                <h4 class="font-semibold text-slate-700">Next Steps</h4>
+                <p class="text-xs text-slate-600 mt-1">This model assumes no population or technology growth. Explore the <b>Full Solow Model</b> to see how sustained growth is possible.</p>
+                <button class="mt-2 w-full text-xs bg-slate-200 text-slate-700 font-semibold py-2 px-2 rounded-lg hover:bg-slate-300">Go to Full Solow Model</button>
+            `);
+        }
+        
+        // --- GUIDED TOUR ---
+        function startGuidedTour() {
+            let currentStep = 0;
+            const tourButton = d3.select("#guided-tour-btn");
+            tourButton.property("disabled", true).text("Tour in Progress...");
+
+            function nextStep() {
+                if (currentStep >= guidedTour.length) {
+                    tourButton.property("disabled", false).text("Start Guided Tour");
+                    return;
+                }
+                const step = guidedTour[currentStep];
+                
+                Object.entries(step.params).forEach(([key, value]) => {
+                    d3.select(`#${key}`).property('value', value).dispatch('input');
+                });
+
+                setTimeout(() => {
+                     d3.select("#story-container").html(`<div class="story-highlight"><b>Tour Step ${currentStep + 1}:</b> ${step.text}</div>`);
+                     currentStep++;
+                     setTimeout(nextStep, 4000);
+                }, DURATION);
+            }
+            nextStep();
+        }
+        
+        // --- INITIALIZATION ---
+        function init() {
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            
+            solowChart.svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${solowChart.height})`);
+            solowChart.svg.append("g").attr("class", "y-axis");
+            solowChart.svg.append("path").attr("class", "investment-curve").attr("fill", "none").attr("stroke", COLORS.investment).attr("stroke-width", 3);
+            solowChart.svg.append("path").attr("class", "depreciation-line").attr("fill", "none").attr("stroke", COLORS.depreciation).attr("stroke-width", 2);
+            solowChart.svg.append("line").attr("class", "k-star-line").attr("stroke", "black").attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            
+            pathChart.svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${pathChart.height})`);
+            pathChart.svg.append("g").attr("class", "y-axis");
+            pathChart.svg.append("line").attr("class", "k-star-line").attr("x1", 0).attr("x2", pathChart.width).attr("stroke", COLORS.capital_path).attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            pathChart.svg.append("line").attr("class", "y-star-line").attr("x1", 0).attr("x2", pathChart.width).attr("stroke", COLORS.output_path).attr("stroke-width", 1.5).attr("stroke-dasharray", "4 4");
+            pathChart.svg.append("path").attr("class", "k-path").attr("fill", "none").attr("stroke", COLORS.capital_path).attr("stroke-width", 2);
+            pathChart.svg.append("path").attr("class", "y-path").attr("fill", "none").attr("stroke", COLORS.output_path).attr("stroke-width", 3);
+
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            d3.select("#guided-tour-btn").on('click', startGuidedTour);
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

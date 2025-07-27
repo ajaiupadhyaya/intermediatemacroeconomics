@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real vs. Nominal GDP Calculator</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 14px; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+        .chat-bubble-user { background-color: #e0f2fe; }
+        .chat-bubble-ai { background-color: #f1f5f9; }
+        .chat-container { max-height: 400px; }
+        .param-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">Real vs. Nominal GDP Calculator</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive tool to understand how economists separate changes in production from changes in prices.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Tutor -->
+            <div class="xl:col-span-4 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Economy Parameters</h2>
+                    <div id="controls-container"></div>
+                </div>
+                 <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 flex flex-col">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">AI Economics Tutor</h2>
+                    <div id="chat-container" class="flex-grow overflow-y-auto pr-2 space-y-4 mb-4 min-h-[150px]">
+                        <div class="chat-bubble-ai p-3 rounded-lg"><p class="text-sm text-slate-700">Change prices or quantities and ask me a question!</p></div>
+                    </div>
+                    <div class="mt-auto">
+                        <div class="flex space-x-2">
+                            <input type="text" id="chat-input" placeholder="Why did real GDP rise?" class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <button id="chat-submit" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">Ask</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualization -->
+            <div class="xl:col-span-8 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Decomposing Nominal and Real GDP</h3>
+                    <div id="gdp-chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis (moved inside middle column for this layout) -->
+            <div class="xl:col-span-12 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Calculation Breakdown</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- STATE & CONFIG ---
+        let state = {};
+        const DURATION = 600;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { good1: "#3b82f6", good2: "#16a34a", real_overlay: "rgba(255,255,255,0.5)" };
+        const params = {
+            p1_0: { min: 0.1, max: 10, value: 2.0, step: 0.1, label: "P₁ (Yr 0)" },
+            q1_0: { min: 0, max: 500, value: 100, step: 10, label: "Q₁ (Yr 0)" },
+            p2_0: { min: 1, max: 2000, value: 500, step: 10, label: "P₂ (Yr 0)" },
+            q2_0: { min: 0, max: 50, value: 5, step: 1, label: "Q₂ (Yr 0)" },
+            p1_1: { min: 0.1, max: 10, value: 3.0, step: 0.1, label: "P₁ (Yr 1)" },
+            q1_1: { min: 0, max: 500, value: 120, step: 10, label: "Q₁ (Yr 1)" },
+            p2_1: { min: 1, max: 2000, value: 550, step: 10, label: "P₂ (Yr 1)" },
+            q2_1: { min: 0, max: 50, value: 6, step: 1, label: "Q₂ (Yr 1)" }
+        };
+
+        // --- D3 & DOM SETUP ---
+        const margin = { top: 20, right: 20, bottom: 40, left: 60 };
+        const container = document.getElementById('gdp-chart-container');
+        let width = container.clientWidth - margin.left - margin.right;
+        let height = width * 0.4;
+        const svg = d3.select("#gdp-chart-container").append("svg")
+            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+            .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+        // --- CORE LOGIC ---
+        function calculateState(p) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +p[key].value);
+            
+            s.nom_gdp_0 = s.p1_0 * s.q1_0 + s.p2_0 * s.q2_0;
+            s.nom_gdp_1 = s.p1_1 * s.q1_1 + s.p2_1 * s.q2_1;
+            
+            s.real_gdp_0 = s.nom_gdp_0;
+            s.real_gdp_1 = s.p1_0 * s.q1_1 + s.p2_0 * s.q2_1;
+            
+            s.g_nominal = s.nom_gdp_0 > 0 ? (s.nom_gdp_1 / s.nom_gdp_0 - 1) : 0;
+            s.g_real = s.real_gdp_0 > 0 ? (s.real_gdp_1 / s.real_gdp_0 - 1) : 0;
+            
+            s.deflator_1 = s.real_gdp_1 > 0 ? (s.nom_gdp_1 / s.real_gdp_1) * 100 : 100;
+            s.inflation = (s.deflator_1 / 100 - 1);
+
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                d3.select(`#${key}-value`).text(parseFloat(val).toLocaleString());
+            });
+            
+            renderChart(state);
+            renderAnalysis(state);
+        }
+
+        function renderChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const data = [
+                { year: "Year 0 (Base)", nom_gdp: s.nom_gdp_0, real_gdp: s.real_gdp_0, g1_val: s.p1_0 * s.q1_0, g2_val: s.p2_0 * s.q2_0 },
+                { year: "Year 1", nom_gdp: s.nom_gdp_1, real_gdp: s.real_gdp_1, g1_val: s.p1_1 * s.q1_1, g2_val: s.p2_1 * s.q2_1 }
+            ];
+            const stack = d3.stack().keys(["g1_val", "g2_val"]);
+            const stackedData = stack(data);
+
+            const xScale = d3.scaleBand().domain(data.map(d => d.year)).range([0, width]).padding(0.4);
+            const yScale = d3.scaleLinear().domain([0, d3.max([s.nom_gdp_0, s.nom_gdp_1, s.real_gdp_1]) * 1.2]).range([height, 0]).nice();
+
+            svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale).tickFormat(d3.format("$,.0f")));
+            svg.select(".x-axis").call(d3.axisBottom(xScale));
+
+            svg.selectAll(".series").data(stackedData)
+                .join("g").attr("class", "series")
+                .attr("fill", (d, i) => i === 0 ? COLORS.good1 : COLORS.good2)
+                .selectAll("rect").data(d => d)
+                .join("rect")
+                .transition(t)
+                .attr("x", d => xScale(d.data.year))
+                .attr("y", d => yScale(d[1]))
+                .attr("height", d => yScale(d[0]) - yScale(d[1]))
+                .attr("width", xScale.bandwidth());
+
+            svg.selectAll(".real-bar").data(data)
+                .join("rect").attr("class", "real-bar")
+                .attr("stroke", "black").attr("stroke-dasharray", "4 4").attr("stroke-width", 2)
+                .attr("fill", "none")
+                .transition(t)
+                .attr("x", d => xScale(d.year))
+                .attr("width", xScale.bandwidth())
+                .attr("y", d => yScale(d.real_gdp))
+                .attr("height", d => height - yScale(d.real_gdp));
+        }
+
+        function renderAnalysis(s) {
+            const { g_nominal, g_real, inflation } = s;
+            let story = `Nominal GDP grew by <b>${(g_nominal * 100).toFixed(1)}%</b>. However, this includes both the change in production and the change in prices.`;
+            story += `<br><br><div class="story-highlight">By holding prices constant at Year 0 levels, we find that **Real GDP** (the actual quantity of stuff produced) grew by <b>${(g_real * 100).toFixed(1)}%</b>. The remaining <b>${(inflation * 100).toFixed(1)}%</b> was due to inflation.</div>`;
+            d3.select("#story-container").html(story);
+
+            d3.select("#equations-container").html(`
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <h4 class="font-semibold text-slate-700">Nominal GDP</h4>
+                        <p class="text-xs p-2 bg-slate-50 rounded mt-1">
+                            Y_N0 = P₁₀Q₁₀ + P₂₀Q₂₀ = ${s.nom_gdp_0.toFixed(0)}<br>
+                            Y_N1 = P₁₁Q₁₁ + P₂₁Q₂₁ = ${s.nom_gdp_1.toFixed(0)}
+                        </p>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-slate-700">Real GDP (Base Yr 0)</h4>
+                        <p class="text-xs p-2 bg-slate-50 rounded mt-1">
+                            Y_R0 = P₁₀Q₁₀ + P₂₀Q₂₀ = ${s.real_gdp_0.toFixed(0)}<br>
+                            Y_R1 = P₁₀Q₁₁ + P₂₀Q₂₁ = ${s.real_gdp_1.toFixed(0)}
+                        </p>
+                    </div>
+                </div>
+                <div class="mt-4 p-3 bg-slate-100 rounded-md text-center">
+                    <h4 class="font-semibold text-slate-800">Growth Decomposition</h4>
+                    <p class="text-sm mt-1"> g_N ≈ g_R + π </p>
+                    <p class="text-lg font-bold text-slate-900 mt-1">
+                        ${(g_nominal * 100).toFixed(1)}% ≈ ${(g_real * 100).toFixed(1)}% + ${(inflation * 100).toFixed(1)}%
+                    </p>
+                </div>
+            `);
+        }
+        
+        // --- INITIALIZATION ---
+        function init() {
+            const controlsContainer = d3.select("#controls-container");
+            const groups = { 'Year 0 (Base)': ['p1_0', 'q1_0', 'p2_0', 'q2_0'], 'Year 1': ['p1_1', 'q1_1', 'p2_1', 'q2_1'] };
+            Object.entries(groups).forEach(([title, keys]) => {
+                controlsContainer.append('h3').attr('class', 'text-lg font-semibold text-slate-700 mt-4').text(title);
+                const grid = controlsContainer.append('div').attr('class', 'param-grid');
+                keys.forEach(key => {
+                    const p = params[key];
+                    grid.html(grid.html() + `
+                        <div>
+                            <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                                <span>${p.label}</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                            </label>
+                            <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                        </div>`);
+                });
+            });
+            
+            svg.append("g").attr("class", "y-axis");
+            svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${height})`);
+
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

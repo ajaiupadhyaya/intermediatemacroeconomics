@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Labor-Leisure Choice Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 14px; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">The Labor-Leisure Choice</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive dashboard to analyze how individuals make optimal decisions about work and leisure.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Individual's Parameters</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Optimal Choice: Tangency Point</h3>
+                    <div id="choice-chart-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Derived Labor Supply Curve</h3>
+                     <div id="supply-chart-container"></div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        let state = {};
+        const DURATION = 600;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { budget: "#1e293b", indifference: "#db2777", optimal: "#db2777", supply: "#16a34a" };
+        const params = {
+            w: { min: 1, max: 50, value: 15, step: 1, label: "Wage Rate", symbol: "w" },
+            T: { min: 8, max: 40, value: 24, step: 1, label: "Time Endowment", symbol: "T" },
+            theta: { min: 0.1, max: 5.0, value: 1.0, step: 0.1, label: "Leisure Preference", symbol: "θ" }
+        };
+
+        const choiceChart = setupChart('choice-chart-container', { top: 20, right: 20, bottom: 40, left: 50 });
+        const supplyChart = setupChart('supply-chart-container', { top: 20, right: 20, bottom: 40, left: 50 });
+
+        function calculateState(p) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +p[key].value);
+            const { w, T, theta } = s;
+            
+            s.l_star = (theta / (1 + theta)) * T;
+            s.l_star = Math.max(1e-6, Math.min(s.l_star, T - 1e-6));
+            s.L_star = T - s.l_star;
+            s.c_star = w * s.L_star;
+            s.U_star = Math.log(s.c_star) + theta * Math.log(s.l_star);
+
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                d3.select(`#${key}-value`).text(parseFloat(val).toFixed(p.step < 1 ? 1 : 0));
+            });
+            
+            renderChoiceChart(state);
+            renderSupplyCurve(state);
+            renderAnalysis(state);
+        }
+
+        function renderChoiceChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { w, T, l_star, c_star, U_star, theta } = s;
+            
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, choiceChart.width]);
+            const yScale = d3.scaleLinear().domain([0, w * T]).range([choiceChart.height, 0]).nice();
+
+            choiceChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            choiceChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            const l_vals = d3.range(0.01, T, T/200);
+            const budget_line = l_vals.map(l => ({ l, c: w * (T - l) }));
+            const indiff_curve = l_vals.map(l => ({ l, c: Math.exp(U_star - theta * Math.log(l)) }));
+
+            choiceChart.svg.select(".budget-line").datum(budget_line).transition(t).attr("d", d3.line().x(d=>xScale(d.l)).y(d=>yScale(d.c)));
+            choiceChart.svg.select(".indifference-curve").datum(indiff_curve).transition(t).attr("d", d3.line().x(d=>xScale(d.l)).y(d=>yScale(d.c)));
+            choiceChart.svg.select(".optimal-point").transition(t).attr("cx", xScale(l_star)).attr("cy", yScale(c_star));
+        }
+
+        function renderSupplyCurve(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { T, theta, w, L_star } = s;
+            
+            const w_vals = d3.range(1, 51, 1);
+            const supply_data = w_vals.map(wage => {
+                const l = (theta / (1 + theta)) * T;
+                return { w: wage, L: T - l };
+            });
+
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, supplyChart.width]);
+            const yScale = d3.scaleLinear().domain([0, 50]).range([supplyChart.height, 0]);
+
+            supplyChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            supplyChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            supplyChart.svg.select(".supply-curve").datum(supply_data).transition(t).attr("d", d3.line().x(d=>xScale(d.L)).y(d=>yScale(d.w)));
+            supplyChart.svg.select(".current-point").transition(t).attr("cx", xScale(L_star)).attr("cy", yScale(w));
+        }
+
+        function renderAnalysis(s) {
+            const { l_star, L_star, c_star, w, theta } = s;
+            const mrs = theta * c_star / l_star;
+
+            let story = `At a wage of <b>$${w.toFixed(2)}</b>, the optimal choice is to work <b>${L_star.toFixed(1)} hours</b>, earning <b>$${c_star.toFixed(2)}</b> for consumption, and enjoying <b>${l_star.toFixed(1)} hours</b> of leisure.`;
+            story += `<br><br><div class="story-highlight">This is the point where the budget line is tangent to the highest possible indifference curve. Here, the individual's subjective trade-off (MRS = ${mrs.toFixed(2)}) equals the market trade-off (wage = ${w.toFixed(2)}).</div>`;
+            d3.select("#story-container").html(story);
+
+            const utility_latex = `U(c, \\ell) = \\ln(c) + \\theta \\ln(\\ell)`;
+            const budget_latex = `c = w(T - \\ell)`;
+            const mrs_latex = `MRS = \\frac{\\theta c}{\\ell} = w`;
+            
+            d3.select("#equations-container").html(`...`); // Fill with KaTeX rendering
+        }
+        
+        function setupChart(containerId, margin) { /* ... */ return { svg, width, height }; }
+        function init() { /* ... */ }
+        init();
+    </script>
+</body>
+</html>

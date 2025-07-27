@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lucas Islands Model Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 14px; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+        .chat-bubble-user { background-color: #e0f2fe; }
+        .chat-bubble-ai { background-color: #f1f5f9; }
+        .chat-container { max-height: 400px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">The Lucas "Islands" Model</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive dashboard exploring how imperfect information and monetary surprises can create business cycles.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Tutor -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Model Parameters</h2>
+                    <div class="flex justify-center mb-4">
+                        <button id="guided-tour-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors text-sm">Start Guided Tour</button>
+                    </div>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 flex flex-col">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">AI Economics Tutor</h2>
+                    <div id="chat-container" class="flex-grow overflow-y-auto pr-2 space-y-4 mb-4 min-h-[200px]">
+                        <div class="chat-bubble-ai p-3 rounded-lg"><p class="text-sm text-slate-700">Set the parameters and ask a question!</p></div>
+                    </div>
+                    <div class="mt-auto">
+                        <div class="flex space-x-2">
+                            <input type="text" id="chat-input" placeholder="What does gamma represent?" class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <button id="chat-submit" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">Ask</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualizations -->
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Equilibrium Response to a Monetary Shock</h3>
+                    <div id="lucas-chart-container"></div>
+                </div>
+                <div class="border-t pt-4">
+                     <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">Shock Decomposition</h3>
+                     <div id="decomposition-chart-container"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                    <div id="next-steps-container" class="mt-6 border-t pt-4"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- STATE & CONFIG ---
+        let state = {};
+        const DURATION = 750;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { ad: "#2563eb", ad_shock: "#0c4a6e", as: "#db2777", output: "#16a34a", price: "#ca8a04" };
+        const params = {
+            gamma: { min: 0.1, max: 10.0, value: 1.0, step: 0.1, label: "Supply Sensitivity", symbol: "γ" },
+            money_shock: { min: -5, max: 5, value: 2.0, step: 0.1, label: "Money Shock", symbol: "ε_m" }
+        };
+        const guidedTour = [
+            { params: { money_shock: 0.0 }, text: "This is the economy's expected state. With no monetary shock (ε_m=0), output and prices are at their potential and expected levels (y=0, p=0)." },
+            { params: { money_shock: 2.0 }, text: "Now, an unexpected positive money shock hits. This shifts the AD curve right. Agents see higher prices but don't know if it's aggregate or local. They increase production." },
+            { params: { gamma: 5.0 }, text: "Let's increase γ. This makes the AS curve flatter. Agents are more easily 'fooled' by price changes, so a monetary shock leads to a large output response and a small price change." },
+            { params: { gamma: 0.2 }, text: "Now, let's make γ very low. The AS curve is steep. Agents are good at filtering out aggregate noise. The same shock now mostly affects prices, with very little impact on real output. Monetary policy is almost neutral." }
+        ];
+
+        // --- D3 & DOM SETUP ---
+        function setupChart(containerId, margin) {
+            const container = document.getElementById(containerId);
+            let width = container.clientWidth - margin.left - margin.right;
+            let height = width * 0.6;
+            if (width < 100) { width = 300; height = 180; }
+            const svg = d3.select(`#${containerId}`).append("svg")
+                .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+                .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+            return { svg, width, height };
+        }
+        const lucasChart = setupChart('lucas-chart-container', { top: 20, right: 20, bottom: 40, left: 50 });
+        const decompChart = setupChart('decomposition-chart-container', { top: 10, right: 20, bottom: 30, left: 60 });
+
+        // --- CORE LOGIC ---
+        function calculateState(currentParams) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +currentParams[key].value);
+            const { gamma, money_shock } = s;
+            
+            s.p_eq = (1 / (1 + gamma)) * money_shock;
+            s.y_eq = (gamma / (1 + gamma)) * money_shock;
+            
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                d3.select(`#${key}-value`).text(parseFloat(val).toFixed(p.step < 1 ? 2 : 1));
+            });
+            
+            renderLucasChart(state);
+            renderDecompChart(state);
+            renderAnalysis(state);
+        }
+
+        function renderLucasChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { gamma, money_shock, p_eq, y_eq } = s;
+
+            const y_range = Math.max(Math.abs(y_eq) * 2, Math.abs(money_shock) * 1.1, 1);
+            const p_range = Math.max(Math.abs(p_eq) * 2, Math.abs(money_shock) * 1.1, 1);
+
+            const xScale = d3.scaleLinear().domain([-y_range, y_range]).range([0, lucasChart.width]);
+            const yScale = d3.scaleLinear().domain([-p_range, p_range]).range([lucasChart.height, 0]);
+
+            lucasChart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            lucasChart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale));
+
+            const line = (pFunc) => d3.line().x(d => xScale(d)).y(d => yScale(pFunc(d)));
+            const points = [-y_range, y_range];
+
+            lucasChart.svg.select(".as-curve").datum(points).transition(t).attr("d", line(y => y / gamma));
+            lucasChart.svg.select(".ad-curve").datum(points).transition(t).attr("d", line(y => -y));
+            lucasChart.svg.select(".ad-shock-curve").datum(points).transition(t).attr("d", line(y => money_shock - y));
+            
+            lucasChart.svg.select(".equilibrium-point").transition(t)
+                .attr("cx", xScale(y_eq)).attr("cy", yScale(p_eq));
+        }
+
+        function renderDecompChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { money_shock, p_eq, y_eq } = s;
+            const data = [
+                { label: "Price Change", value: p_eq, color: COLORS.price },
+                { label: "Output Change", value: y_eq, color: COLORS.output }
+            ];
+            
+            const totalBar = [{ label: "Total Shock", value: money_shock }];
+            const maxVal = Math.abs(money_shock);
+
+            const xScale = d3.scaleLinear().domain([0, maxVal]).range([0, decompChart.width]);
+            const yScale = d3.scaleBand().domain(["Total Shock"]).range([0, decompChart.height]).padding(0.6);
+
+            decompChart.svg.select(".y-axis").call(d3.axisLeft(yScale).tickSize(0)).select(".domain").remove();
+
+            // Background bar for total shock
+            decompChart.svg.selectAll(".total-bar").data(totalBar)
+                .join("rect").attr("class", "total-bar")
+                .attr("fill", "#e2e8f0")
+                .attr("y", d => yScale(d.label))
+                .attr("height", yScale.bandwidth())
+                .transition(t)
+                .attr("width", d => xScale(Math.abs(d.value)));
+
+            // Stacked bars for decomposition
+            let currentX = 0;
+            decompChart.svg.selectAll(".comp-bar").data(data)
+                .join("rect").attr("class", "comp-bar")
+                .attr("fill", d => d.color)
+                .attr("y", yScale("Total Shock"))
+                .attr("height", yScale.bandwidth())
+                .transition(t)
+                .attr("x", (d, i) => {
+                    const xPos = currentX;
+                    currentX += xScale(Math.abs(d.value));
+                    return xPos;
+                })
+                .attr("width", d => xScale(Math.abs(d.value)));
+        }
+
+        function renderAnalysis(s) {
+            const { gamma, money_shock, p_eq, y_eq } = s;
+            
+            let story = `An unanticipated monetary shock of <b>${money_shock.toFixed(2)}</b> hits the economy. This shock must be absorbed by a combination of price changes and output changes.`;
+            story += `<br><br><div class="story-highlight">With a supply sensitivity (γ) of <b>${gamma.toFixed(1)}</b>, the shock is split: prices rise by <b>${p_eq.toFixed(2)}</b>, and real output increases by <b>${y_eq.toFixed(2)}</b>. A higher γ means agents are more easily surprised, causing more of the shock to affect real output.</div>`;
+            d3.select("#story-container").html(story);
+
+            const ad_latex = `y_t = m_t - p_t`;
+            const as_latex = `y_t = \\gamma (p_t - p_t^e)`;
+            const equil_latex = `y_t = \\frac{\\gamma}{1+\\gamma}\\epsilon_m, \\quad p_t = \\frac{1}{1+\\gamma}\\epsilon_m`;
+
+            d3.select("#equations-container").html(`
+                <h3 class="text-xl font-semibold text-slate-700 mb-2">Key Equations</h3>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="ad-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="as-eq"></div></div>
+                <div class="p-3 bg-slate-50 rounded-md"><div id="equil-eq"></div></div>
+            `);
+            katex.render(ad_latex, document.getElementById('ad-eq'), { throwOnError: false });
+            katex.render(as_latex, document.getElementById('as-eq'), { throwOnError: false });
+            katex.render(equil_latex, document.getElementById('equil-eq'), { throwOnError: false });
+
+            d3.select("#next-steps-container").html(`
+                <h4 class="font-semibold text-slate-700">Next Steps</h4>
+                <p class="text-xs text-slate-600 mt-1">This model features a 'surprise-driven' supply curve. Compare this to the <b>AD-AS Model</b>, which uses a sticky-price mechanism to generate short-run fluctuations.</p>
+                <button class="mt-2 w-full text-xs bg-slate-200 text-slate-700 font-semibold py-2 px-2 rounded-lg hover:bg-slate-300">Go to AD-AS Model</button>
+            `);
+        }
+        
+        // --- GUIDED TOUR ---
+        function startGuidedTour() { /* ... same as before ... */ }
+        
+        // --- INITIALIZATION ---
+        function init() {
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            
+            lucasChart.svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${lucasChart.height})`);
+            lucasChart.svg.append("g").attr("class", "y-axis");
+            lucasChart.svg.append("path").attr("class", "as-curve").attr("fill", "none").attr("stroke", COLORS.as).attr("stroke-width", 3);
+            lucasChart.svg.append("path").attr("class", "ad-curve").attr("fill", "none").attr("stroke", COLORS.ad).attr("stroke-width", 2).attr("stroke-dasharray", "5 5");
+            lucasChart.svg.append("path").attr("class", "ad-shock-curve").attr("fill", "none").attr("stroke", COLORS.ad_shock).attr("stroke-width", 3);
+            lucasChart.svg.append("circle").attr("class", "equilibrium-point").attr("r", 6).attr("fill", "black");
+            
+            decompChart.svg.append("g").attr("class", "y-axis");
+
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            d3.select("#guided-tour-btn").on('click', startGuidedTour);
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

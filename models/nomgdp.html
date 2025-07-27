@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nominal vs. Real GDP Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">Nominal vs. Real GDP</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">A visual demonstration of how inflation drives a wedge between the dollar value of output and the actual quantity of goods and services produced.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <div class="xl:col-span-4 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Economic Assumptions</h2>
+                    <div id="controls-container" class="space-y-5"></div>
+                </div>
+            </div>
+
+            <div class="xl:col-span-8 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <h3 class="text-xl font-semibold text-slate-700 text-center mb-2">The Widening Gap: Nominal vs. Real GDP Over Time</h3>
+                <div id="gdp-chart-container"></div>
+            </div>
+            
+            <div class="xl:col-span-12 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        let state = {};
+        const DURATION = 600;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { nominal: "#f59e0b", real: "#16a34a", inflation_gap: "#e2e8f0" };
+        const params = {
+            nominal_growth: { min: -0.05, max: 0.15, value: 0.05, step: 0.005, label: "Nominal Growth Rate", symbol: "g_N" },
+            inflation: { min: -0.05, max: 0.15, value: 0.03, step: 0.005, label: "Inflation Rate", symbol: "π" },
+            T: { min: 3, max: 40, value: 20, step: 1, label: "Years", symbol: "T" },
+            initial_gdp: { min: 100, max: 10000, value: 1000, step: 100, label: "Initial GDP", symbol: "Y₀" }
+        };
+
+        const margin = { top: 20, right: 50, bottom: 40, left: 60 };
+        const container = document.getElementById('gdp-chart-container');
+        let width = container.clientWidth - margin.left - margin.right;
+        let height = width * 0.5;
+        const svg = d3.select("#gdp-chart-container").append("svg")
+            .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+            .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+        function calculateState(p) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +p[key].value);
+            const { nominal_growth, inflation, T, initial_gdp } = s;
+            
+            const years = d3.range(T + 1);
+            s.time_series = years.map(t => {
+                const nom_gdp = initial_gdp * Math.pow(1 + nominal_growth, t);
+                const real_gdp = nom_gdp / Math.pow(1 + inflation, t);
+                return { t, nom_gdp, real_gdp };
+            });
+            s.real_growth = (1 + nominal_growth) / (1 + inflation) - 1;
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                const format = (p.symbol.includes('g') || p.symbol === 'π') ? d3.format(".1%") : d3.format(",.0f");
+                d3.select(`#${key}-value`).text(format(val));
+            });
+            
+            renderChart(state);
+            renderAnalysis(state);
+        }
+
+        function renderChart(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { time_series, T } = s;
+
+            const xScale = d3.scaleLinear().domain([0, T]).range([0, width]);
+            const yScale = d3.scaleLinear().domain([0, d3.max(time_series, d => d.nom_gdp)]).range([height, 0]).nice();
+
+            svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale));
+            svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale).tickFormat(d3.format("$,.0f")));
+
+            const area_nom = d3.area().x(d => xScale(d.t)).y0(0).y1(d => yScale(d.nom_gdp));
+            const area_real = d3.area().x(d => xScale(d.t)).y0(0).y1(d => yScale(d.real_gdp));
+
+            svg.select(".inflation-gap").datum(time_series).transition(t).attr("d", area_nom);
+            svg.select(".real-gdp-area").datum(time_series).transition(t).attr("d", area_real);
+        }
+
+        function renderAnalysis(s) { /* ... */ }
+        function init() { /* ... */ }
+        init();
+    </script>
+</body>
+</html>

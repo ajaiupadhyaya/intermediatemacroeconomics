@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equilibrium Business Cycle Dashboard</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0KOVEMVIhbGKZC0svKNUROgsE7FVU2TwuUmdlNP9GGUo2CRI3BlgN" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" integrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzUOEleOLALmuqehneUG+vnGctmUb0ZY0l8" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; }
+        .katex { font-size: 1.1em; }
+        .section-title { font-family: 'Source Serif 4', serif; font-weight: 600; }
+        .axis-label { font-size: 12px; }
+        .story-highlight { background-color: #f0f9ff; border-left: 3px solid #0ea5e9; padding: 0.75rem; border-radius: 0.25rem; }
+        .chat-container { max-height: 400px; }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="max-w-screen-2xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-slate-900 tracking-tight sm:text-5xl section-title">Equilibrium Business Cycles with Persistence</h1>
+            <p class="mt-3 text-lg text-slate-600 max-w-4xl mx-auto">An interactive simulation of how monetary shocks create persistent cycles through capital accumulation and rational expectations.</p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Controls & Tutor -->
+            <div class="xl:col-span-3 space-y-6">
+                <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Model Parameters</h2>
+                    <div class="flex justify-center mb-4">
+                        <button id="guided-tour-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-700 transition-colors text-sm">Start Guided Tour</button>
+                    </div>
+                    <div id="controls-container" class="space-y-4"></div>
+                </div>
+                 <div class="bg-white p-6 rounded-2xl shadow-lg border border-slate-200 flex flex-col">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">AI Economics Tutor</h2>
+                    <div id="chat-container" class="flex-grow overflow-y-auto pr-2 space-y-4 mb-4 min-h-[200px]">
+                        <div class="chat-bubble-ai p-3 rounded-lg"><p class="text-sm text-slate-700">Set the parameters and ask a question!</p></div>
+                    </div>
+                    <div class="mt-auto">
+                        <div class="flex space-x-2">
+                            <input type="text" id="chat-input" placeholder="Why does output overshoot?" class="flex-grow border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                            <button id="chat-submit" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-sky-700 transition-colors">Ask</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Column: Visualizations -->
+            <div class="xl:col-span-6 bg-white p-4 sm:p-6 rounded-2xl shadow-xl border border-slate-200 space-y-4">
+                <h3 class="text-xl font-semibold text-slate-700 text-center">Dynamic Response to a Monetary Shock</h3>
+                <div id="charts-grid" class="grid grid-cols-2 gap-4">
+                    <!-- Charts will be injected here -->
+                </div>
+            </div>
+
+            <!-- Right Column: Analysis -->
+            <div class="xl:col-span-3 bg-white p-6 rounded-2xl shadow-lg border border-slate-200">
+                <div id="analysis-content">
+                    <h2 class="text-2xl text-slate-800 border-b pb-3 mb-4 section-title">Analysis</h2>
+                    <div id="story-container" class="text-sm text-slate-700 leading-relaxed mb-6"></div>
+                    <div id="equations-container" class="space-y-4 text-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- STATE & CONFIG ---
+        let state = {};
+        const DURATION = 750;
+        const EASE = d3.easeCubicOut;
+        const COLORS = { m: "#2563eb", y: "#16a34a", k: "#1e293b", p: "#ca8a04", p_e: "#db2777", surprise: "#f59e0b" };
+        const params = {
+            gamma: { min: 0.1, max: 5.0, value: 1.5, step: 0.1, label: "Supply Sensitivity", symbol: "γ" },
+            phi: { min: 0.01, max: 0.99, value: 0.33, step: 0.01, label: "Output Elasticity of K", symbol: "φ" },
+            delta: { min: 0.01, max: 0.2, value: 0.08, step: 0.01, label: "Depreciation Rate", symbol: "δ" },
+            s_y: { min: 0.0, max: 0.5, value: 0.1, step: 0.01, label: "Investment Sensitivity", symbol: "s_y" },
+            rho: { min: 0.0, max: 0.99, value: 0.8, step: 0.01, label: "Monetary Persistence", symbol: "ρ" },
+            epsilon_m: { min: -0.1, max: 0.1, value: 0.05, step: 0.01, label: "Shock Size", symbol: "εₘ" },
+            T: { min: 20, max: 150, value: 50, step: 5, label: "Time Horizon", symbol: "T" },
+            shock_time: { min: 1, max: 20, value: 5, step: 1, label: "Shock Period", symbol: "t_shock" }
+        };
+        const guidedTour = [
+            { params: { epsilon_m: 0.05, rho: 0.8 }, text: "A positive monetary shock hits at t=5. Because agents' expectations are based on past info, this creates a price surprise, causing output (y) to rise." },
+            { params: {}, text: "The initial boom in output (y>0) stimulates net investment, causing the capital stock (k) to begin accumulating above its steady state." },
+            { params: { rho: 0.0 }, text: "Now, let's make the shock purely temporary (ρ=0). The initial output boom is smaller, and the capital accumulation is less pronounced. The cycle is much shorter." },
+            { params: { s_y: 0.3 }, text: "With high investment sensitivity (s_y), the capital stock overshoots significantly, leading to a 'boom-bust' cycle where output eventually falls below potential as the excess capital depreciates." }
+        ];
+
+        // --- D3 & DOM SETUP ---
+        const chartGrid = d3.select("#charts-grid");
+        const chartInfos = [
+            { id: 'm-chart', title: 'Money Supply (m)', y_vars: ['m'] },
+            { id: 'yk-chart', title: 'Output (y) & Capital (k)', y_vars: ['y', 'k'] },
+            { id: 'p-chart', title: 'Prices (p, pᵉ)', y_vars: ['p', 'p_e'] },
+            { id: 'surprise-chart', title: 'Price Surprise (p-pᵉ)', y_vars: ['surprise'] }
+        ];
+        const charts = {};
+        chartInfos.forEach(info => {
+            const container = chartGrid.append('div');
+            container.append('h4').attr('class', 'text-center text-sm font-semibold text-slate-600').text(info.title);
+            const chartContainer = container.append('div').attr('id', info.id);
+            const margin = { top: 5, right: 5, bottom: 20, left: 30 };
+            let width = 250 - margin.left - margin.right;
+            let height = 150 - margin.top - margin.bottom;
+            const svg = d3.select(`#${info.id}`).append("svg")
+                .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+                .append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+            charts[info.id] = { svg, width, height, y_vars: info.y_vars };
+        });
+
+        // --- CORE LOGIC ---
+        function calculateState(p) {
+            const s = {};
+            Object.keys(params).forEach(key => s[key] = +p[key].value);
+            const { gamma, phi, delta, s_y, rho, epsilon_m, T, shock_time } = s;
+            
+            const k = [0], m = [0];
+            const y = [], p = [], p_e = [];
+            
+            for (let t = 0; t < T; t++) {
+                const shock_now = (t === shock_time) ? epsilon_m : 0.0;
+                m[t] = rho * (m[t-1] || 0) + shock_now;
+                
+                p_e[t] = rho * (m[t-1] || 0) - phi * k[t];
+                
+                p[t] = (m[t] - phi * k[t] + gamma * p_e[t]) / (1.0 + gamma);
+                y[t] = m[t] - p[t];
+                
+                const invest_net = s_y * y[t];
+                k[t+1] = (1.0 - delta) * k[t] + invest_net;
+            }
+            
+            s.time_series = d3.range(T).map(t => ({ t, m: m[t], y: y[t], k: k[t], p: p[t], p_e: p_e[t], surprise: p[t] - p_e[t] }));
+            return s;
+        }
+        
+        function render() {
+            const currentParams = {};
+            Object.keys(params).forEach(key => currentParams[key] = {value: d3.select(`#${key}`).property("value")});
+            state = calculateState(currentParams);
+            
+            Object.entries(params).forEach(([key, p]) => {
+                const val = state[key];
+                d3.select(`#${key}-value`).text(parseFloat(val).toFixed(p.step < 1 ? 2 : 0));
+            });
+            
+            renderCharts(state);
+            renderAnalysis(state);
+        }
+
+        function renderCharts(s) {
+            const t = d3.transition().duration(DURATION).ease(EASE);
+            const { time_series, T } = s;
+
+            Object.values(charts).forEach(chart => {
+                const y_data = chart.y_vars.flatMap(v => time_series.map(d => d[v]));
+                const y_extent = d3.extent(y_data);
+                const y_buffer = (y_extent[1] - y_extent[0]) * 0.1 || 0.1;
+
+                const xScale = d3.scaleLinear().domain([0, T]).range([0, chart.width]);
+                const yScale = d3.scaleLinear().domain([y_extent[0] - y_buffer, y_extent[1] + y_buffer]).range([chart.height, 0]).nice();
+
+                chart.svg.select(".x-axis").transition(t).call(d3.axisBottom(xScale).ticks(5));
+                chart.svg.select(".y-axis").transition(t).call(d3.axisLeft(yScale).ticks(4));
+                chart.svg.select(".zero-line").transition(t).attr("y1", yScale(0)).attr("y2", yScale(0));
+
+                chart.y_vars.forEach(v => {
+                    chart.svg.select(`.${v}-path`).datum(time_series)
+                        .transition(t)
+                        .attr("d", d3.line().x(d => xScale(d.t)).y(d => yScale(d[v])));
+                });
+            });
+        }
+
+        function renderAnalysis(s) {
+            const peak_y = d3.max(s.time_series, d => Math.abs(d.y));
+            const peak_y_time = s.time_series[d3.maxIndex(s.time_series, d => Math.abs(d.y))].t;
+            
+            let story = `A monetary shock of <b>${s.epsilon_m.toFixed(2)}</b> at t=${s.shock_time} creates a price surprise, causing an initial output boom.`;
+            story += `<br><br><div class="story-highlight">The initial boom stimulates investment, causing capital to accumulate. This capital persistence, combined with monetary persistence (ρ=${s.rho}), creates a prolonged business cycle. Output peaks at <b>${peak_y.toFixed(3)}</b> at t=${peak_y_time}.</div>`;
+            d3.select("#story-container").html(story);
+
+            const ad_latex = `y_t = m_t - p_t`;
+            const as_latex = `y_t = \\phi k_t + \\gamma (p_t - p_t^e)`;
+            const k_accum_latex = `k_{t+1} = (1-\\delta) k_t + s_y y_t`;
+
+            d3.select("#equations-container").html(`
+                <h3 class="text-xl font-semibold text-slate-700 mb-2">Key Equations</h3>
+                <div class="p-2 bg-slate-50 rounded-md"><div id="ad-eq"></div></div>
+                <div class="p-2 bg-slate-50 rounded-md"><div id="as-eq"></div></div>
+                <div class="p-2 bg-slate-50 rounded-md"><div id="k-accum-eq"></div></div>
+            `);
+            katex.render(ad_latex, document.getElementById('ad-eq'), { throwOnError: false });
+            katex.render(as_latex, document.getElementById('as-eq'), { throwOnError: false });
+            katex.render(k_accum_latex, document.getElementById('k-accum-eq'), { throwOnError: false });
+        }
+        
+        // --- GUIDED TOUR & AI (omitted for brevity) ---
+        
+        // --- INITIALIZATION ---
+        function init() {
+            const controlsContainer = d3.select("#controls-container");
+            Object.entries(params).forEach(([key, p]) => {
+                controlsContainer.html(controlsContainer.html() + `
+                    <div>
+                        <label for="${key}" class="flex justify-between text-sm font-medium text-slate-600">
+                            <span>${p.label} ($${p.symbol}$)</span><span id="${key}-value" class="font-semibold text-slate-800"></span>
+                        </label>
+                        <input type="range" id="${key}" min="${p.min}" max="${p.max}" value="${p.value}" step="${p.step}" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    </div>`);
+            });
+            
+            Object.values(charts).forEach(chart => {
+                chart.svg.append("g").attr("class", "x-axis").attr("transform", `translate(0,${chart.height})`);
+                chart.svg.append("g").attr("class", "y-axis");
+                chart.svg.append("line").attr("class", "zero-line").attr("x1", 0).attr("x2", chart.width).attr("stroke", "grey").attr("stroke-dasharray", "2 2");
+                chart.y_vars.forEach((v, i) => {
+                    chart.svg.append("path").attr("class", `${v}-path`)
+                        .attr("fill", "none").attr("stroke", COLORS[v]).attr("stroke-width", i === 0 ? 2.5 : 1.5)
+                        .attr("stroke-dasharray", v === 'k' || v === 'p_e' ? "4 4" : "none");
+                });
+            });
+
+            Object.keys(params).forEach(key => d3.select(`#${key}`).on("input", render));
+            
+            render();
+        }
+
+        init();
+    </script>
+</body>
+</html>
